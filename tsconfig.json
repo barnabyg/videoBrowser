@@ -1,8 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "moduleDetection": "legacy",
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
@@ -11,8 +12,7 @@
     "outDir": "build",
     "rootDir": "src",
     "types": ["node"],
-    "skipLibCheck": false,
-    "ignoreDeprecations": "6.0"
+    "skipLibCheck": false
   },
   "include": ["src/**/*.ts"]
 }
