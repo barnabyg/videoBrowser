@@ -1,0 +1,25 @@
+name: Verify
+on: [push, pull_request]
+jobs:
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.0
+          cache: npm
+      - run: npm.cmd ci
+      - run: npm.cmd run tools
+      - run: npm.cmd run verify -- --no-dashboard
+        env:
+          CI: "true"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-evidence
+          path: |
+            .verify/**/evidence.json
+            .verify/**/*.png
+            test-results/
+            dist/*.zip

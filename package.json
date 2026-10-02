@@ -1,0 +1,38 @@
+{
+  "name": "video-browser",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Windows video thumbnail browser",
+  "main": "build/main.js",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": "24.13.0"
+  },
+  "scripts": {
+    "tools": "node scripts/tools.mjs",
+    "build": "tsc && node scripts/copy-ui.mjs",
+    "start": "electron .",
+    "format": "prettier --write src scripts tests .github *.json *.mjs *.ts README.md docs/dependencies.md docs/package-readme.md docs/ticket-01-evidence.md",
+    "format:check": "prettier --check src scripts tests .github *.json *.mjs *.ts README.md docs/dependencies.md docs/package-readme.md docs/ticket-01-evidence.md",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json",
+    "analyze": "eslint --config eslint.analysis.mjs src tests --max-warnings 0",
+    "test": "npm.cmd run build && playwright test",
+    "test:dashboard": "node --test tests/dashboard.test.mjs",
+    "test:package": "node scripts/test-package.mjs",
+    "package": "npm.cmd run build && node scripts/package.mjs",
+    "verify": "node scripts/verify.mjs"
+  },
+  "devDependencies": {
+    "@electron-internal/extract-zip": "1.0.1",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.6.4",
+    "electron": "44.5.1",
+    "eslint": "10.11.0",
+    "prettier": "3.9.9",
+    "typescript": "6.0.2",
+    "typescript-eslint": "8.71.0",
+    "yazl": "3.3.1"
+  }
+}

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:;"
+    />
+    <title>Video Browser</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Video Browser</h1>
+      <p>Choose a folder to recognise and open your videos.</p>
+      <form id="folder-form">
+        <label for="folder">Folder path</label>
+        <div class="folder-controls">
+          <input id="folder" type="text" placeholder="C:\Videos" required />
+          <button type="submit">Open folder</button>
+          <button id="choose" type="button">Choose folder…</button>
+        </div>
+      </form>
+      <p id="selected" aria-label="Selected folder"></p>
+      <p id="status" role="status">Select a folder to begin.</p>
+    </header>
+    <main><div id="grid" aria-label="Source videos"></div></main>
+    <script src="renderer.js"></script>
+  </body>
+</html>

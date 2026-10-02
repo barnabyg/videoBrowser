@@ -1,0 +1,11 @@
+.scratch/
+CONTEXT.md
+docs/adr/0001-separate-thumbnails-from-playback.md
+package-lock.json
+node_modules/
+build/
+dist/
+.tools/
+.cache/
+.verify/
+test-results/

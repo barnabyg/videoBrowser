@@ -1,0 +1,8 @@
+node_modules/
+build/
+dist/
+.cache/
+.tools/
+.verify/
+test-results/
+playwright-report/
