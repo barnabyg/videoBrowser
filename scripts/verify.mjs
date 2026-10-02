@@ -1,6 +1,10 @@
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
-import { gates, optionalDashboard, updateState } from "./dashboard.mjs";
+import {
+  gates,
+  optionalDashboard,
+  updateState,
+  finishDashboard,
+} from "./dashboard.mjs";
 
 const dashboard =
   !process.env.CI && !process.argv.includes("--no-dashboard")
@@ -46,17 +50,5 @@ for (let i = 0; i < commands.length; i++) {
   });
   if (exitCode) break;
 }
-if (dashboard) {
-  updateState(dashboard.state, { status: exitCode ? "failed" : "passed" });
-  await mkdir(".verify", { recursive: true });
-  await writeFile(
-    ".verify/verification.json",
-    JSON.stringify(dashboard.state, null, 2),
-  );
-  console.log(
-    `Verification ${dashboard.state.status}. Dashboard stays available for 15 seconds.`,
-  );
-  await new Promise((resolve) => setTimeout(resolve, 15_000));
-  await dashboard.close();
-}
 process.exitCode = exitCode;
+if (dashboard) await finishDashboard(dashboard, exitCode);

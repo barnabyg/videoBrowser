@@ -1,5 +1,7 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 export const gates = [
   "Formatting",
@@ -91,5 +93,35 @@ export async function optionalDashboard(factory = startDashboard) {
       `Dashboard unavailable; terminal verification continues: ${error.message}`,
     );
     return undefined;
+  }
+}
+
+export async function finishDashboard(
+  dashboard,
+  exitCode,
+  { reportPath = ".verify/verification.json", holdMs = 15_000 } = {},
+) {
+  updateState(dashboard.state, { status: exitCode ? "failed" : "passed" });
+  try {
+    try {
+      await mkdir(path.dirname(reportPath), { recursive: true });
+      await writeFile(reportPath, JSON.stringify(dashboard.state, null, 2));
+    } catch (error) {
+      console.log(
+        `Dashboard report unavailable; verification result is unchanged: ${error.message}`,
+      );
+    }
+    console.log(
+      `Verification ${dashboard.state.status}. Dashboard stays available for ${holdMs / 1000} seconds.`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, holdMs));
+  } finally {
+    try {
+      await dashboard.close();
+    } catch (error) {
+      console.log(
+        `Dashboard could not close cleanly; verification result is unchanged: ${error.message}`,
+      );
+    }
   }
 }

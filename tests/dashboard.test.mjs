@@ -6,7 +6,11 @@ import {
   startDashboard,
   optionalDashboard,
   gates,
+  finishDashboard,
 } from "../scripts/dashboard.mjs";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import DashboardReporter from "./dashboard-reporter.mjs";
 
 test("dashboard retains failures, test progress and bounded recent output", () => {
@@ -94,5 +98,20 @@ test("runner reporter sends ordered progress and tolerates unavailable endpoints
   } finally {
     if (previous === undefined) delete process.env.TEST_DASHBOARD_EVENTS;
     else process.env.TEST_DASHBOARD_EVENTS = previous;
+  }
+});
+
+test("an unwritable report keeps the gate result and still closes the dashboard", async () => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "video-browser-report-"),
+  );
+  const dashboard = await startDashboard({ port: 0 });
+  try {
+    // Writing a JSON file onto an existing directory deterministically fails.
+    await finishDashboard(dashboard, 0, { reportPath: directory, holdMs: 0 });
+    assert.equal(dashboard.state.status, "passed");
+    await assert.rejects(fetch(`${dashboard.url}/state`));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
