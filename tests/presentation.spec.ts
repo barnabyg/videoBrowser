@@ -267,7 +267,8 @@ test("long filenames stay visible and can be read in full by mouse, keyboard and
     // 640 pixels the name starts below the visible grid.
     await sizeControl(page).fill("640");
     expect(await inView(name)).toBe(false);
-    await sizeControl(page).focus();
+    // The grid follows the order control.
+    await page.getByRole("combobox", { name: "Order" }).focus();
     await page.keyboard.press("Tab");
     expect(await focusedName(page)).toBe(`Open ${long}`);
     expect(await clipped(name)).toBe(false);
@@ -320,6 +321,11 @@ test("the whole workflow runs from the keyboard with visible focus, and only Ent
       await page.keyboard.press("Tab");
       await expect(sizeControl(page)).toBeFocused();
       await expectFocusVisible();
+      for (const name of ["Sort by", "Order"]) {
+        await page.keyboard.press("Tab");
+        await expect(page.getByRole("combobox", { name })).toBeFocused();
+        await expectFocusVisible();
+      }
 
       // One Tab enters the grid at its first entry.
       await page.keyboard.press("Tab");
@@ -357,11 +363,15 @@ test("the whole workflow runs from the keyboard with visible focus, and only Ent
 
       // Resizing keeps the current entry in view and Tab returns to it.
       await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Shift+Tab");
       await expect(sizeControl(page)).toBeFocused();
       await page.keyboard.press("End");
       await expect(sizeControl(page)).toHaveValue("640");
       // At 640 pixels an entry can be taller than the grid; its top stays in view.
       expect(await topInView(videoCard(page, target))).toBe(true);
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab");
       await page.keyboard.press("Tab");
       expect(await focusedName(page)).toBe(`Open ${target}`);
 

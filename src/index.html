@@ -38,6 +38,16 @@
           aria-valuetext="320 pixels wide"
         />
         <span id="size-value" aria-hidden="true">320 px</span>
+        <label for="sort-field">Sort by</label>
+        <select id="sort-field">
+          <option value="name">Filename</option>
+          <option value="modified">Date modified</option>
+        </select>
+        <label for="sort-direction">Order</label>
+        <select id="sort-direction">
+          <option value="ascending">A to Z</option>
+          <option value="descending">Z to A</option>
+        </select>
       </div>
       <p id="status" role="status">Select a folder to begin.</p>
     </header>

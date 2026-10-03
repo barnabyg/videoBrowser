@@ -1,6 +1,6 @@
 // Lists the source videos directly contained in a selected folder. Listing depends
 // only on the filename extension; decoding and playback are separate capabilities.
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import type { FolderStatus } from "./contract";
 
@@ -24,6 +24,8 @@ export const videoExtensions = new Set([
 export interface ListedVideo {
   filename: string;
   source: string;
+  /** Modification time in milliseconds since the epoch, or 0 when it cannot be read. */
+  modified: number;
 }
 
 export interface FolderListing {
@@ -55,15 +57,22 @@ export async function listFolder(folder: string): Promise<FolderListing> {
     return { status: failures[code] ?? "unreadable", entries: [] };
   }
   if (!files.length) return { status: "empty", entries: [] };
-  const entries = files
-    .filter(
-      (file) =>
-        file.isFile() &&
-        videoExtensions.has(path.extname(file.name).toLowerCase()),
-    )
-    .map((file) => ({
-      filename: file.name,
-      source: path.join(folder, file.name),
-    }));
+  const entries = await Promise.all(
+    files
+      .filter(
+        (file) =>
+          file.isFile() &&
+          videoExtensions.has(path.extname(file.name).toLowerCase()),
+      )
+      .map(async (file) => {
+        const source = path.join(folder, file.name);
+        // A source whose details cannot be read stays listed and launchable.
+        const modified = await stat(source).then(
+          (info) => info.mtimeMs,
+          () => 0,
+        );
+        return { filename: file.name, source, modified };
+      }),
+  );
   return { status: entries.length ? "videos" : "no-videos", entries };
 }

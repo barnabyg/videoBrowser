@@ -17,3 +17,7 @@ _Avoid_: Preview video
 
 **Placeholder**:
 A visual stand-in for a thumbnail that is not yet available or cannot be generated.
+
+**Preferences**:
+The browsing choices remembered between sessions: the last selected folder, the thumbnail size and the sort order.
+_Avoid_: Settings, config

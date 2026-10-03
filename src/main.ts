@@ -4,6 +4,13 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { checkAssociation } from "./association";
 import { listFolder, videoExtensions } from "./folder";
+import {
+  openPreferences,
+  validSize,
+  validSort,
+  type PreferenceStore,
+} from "./preferences";
+import { sortEntries } from "./sort";
 import { startQueue, type ThumbnailQueue } from "./queue";
 import {
   bundledTools,
@@ -11,11 +18,21 @@ import {
   processesStopped,
   type Tools,
 } from "./thumbnail";
-import type { FolderResult, VideoEntry, ThumbnailResult } from "./contract";
+import type {
+  FolderResult,
+  FolderStatus,
+  VideoEntry,
+  ThumbnailResult,
+} from "./contract";
 
 let window: BrowserWindow;
 let work = new AbortController();
 let sources = new Map<string, string>();
+// The selected folder's entries with their modification times, for re-sorting.
+let listed: (VideoEntry & { modified: number })[] = [];
+let preferences: PreferenceStore;
+// Folders remembered for the next session: those that could be listed.
+const listable = new Set<FolderStatus>(["videos", "empty", "no-videos"]);
 // Stored stills of the selected folder's entries, served as thumbnail://<id>.
 let stills = new Map<string, string>();
 let queue: ThumbnailQueue | undefined;
@@ -51,6 +68,7 @@ async function openFolder(folder: unknown): Promise<FolderResult> {
   work.abort();
   work = new AbortController();
   sources = new Map();
+  listed = [];
   stills = new Map();
   queue = undefined;
   priorities = [];
@@ -59,11 +77,19 @@ async function openFolder(folder: unknown): Promise<FolderResult> {
     return { folder: "", status: "invalid-path", entries: [] };
   const listing = await listFolder(folder);
   if (signal.aborted) return { folder, status: listing.status, entries: [] };
-  const entries: VideoEntry[] = listing.entries.map((video) => {
-    const id = randomUUID();
-    sources.set(id, video.source);
-    return { id, filename: video.filename };
-  });
+  if (listable.has(listing.status)) preferences.update({ folder });
+  // Sources are queued for extraction in the order they are shown.
+  listed = sortEntries(listing.entries, preferences.current().sort).map(
+    (video) => {
+      const id = randomUUID();
+      sources.set(id, video.source);
+      return { id, filename: video.filename, modified: video.modified };
+    },
+  );
+  const entries: VideoEntry[] = listed.map(({ id, filename }) => ({
+    id,
+    filename,
+  }));
   const cache = path.join(app.getPath("userData"), "thumbnails");
   // Start after the IPC response, allowing the renderer to display filenames first.
   // Storage only enables display and later reuse; a failed mkdir still extracts.
@@ -142,6 +168,9 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 void app.whenReady().then(async () => {
+  preferences = await openPreferences(
+    path.join(app.getPath("userData"), "preferences.json"),
+  );
   // Serves only stills of the selected folder's entries.
   protocol.handle("thumbnail", async (request) => {
     const still = stills.get(new URL(request.url).hostname);
@@ -185,6 +214,19 @@ void app.whenReady().then(async () => {
   function validateSender(event: Electron.IpcMainInvokeEvent): void {
     if (!trusted(event)) throw new Error("Untrusted IPC sender");
   }
+  ipcMain.handle("preferences", (event) => {
+    validateSender(event);
+    return preferences.current();
+  });
+  ipcMain.handle("sort", (event, order: unknown) => {
+    validateSender(event);
+    if (!validSort(order)) throw new Error("Invalid sort order");
+    preferences.update({ sort: order });
+    return sortEntries(listed, order).map((entry) => entry.id);
+  });
+  ipcMain.on("set-size", (event, width: unknown) => {
+    if (trusted(event) && validSize(width)) preferences.update({ size: width });
+  });
   ipcMain.handle("choose-folder", async (event) => {
     validateSender(event);
     const result = await dialog.showOpenDialog(window, {
@@ -219,6 +261,9 @@ void app.whenReady().then(async () => {
 });
 app.on("window-all-closed", () => {
   work.abort();
-  // A process still being started is stopped once its id is known.
-  void processesStopped(5_000).then(() => app.quit());
+  // A process still being started is stopped once its id is known, and the
+  // last preference change is saved before quitting.
+  void Promise.all([processesStopped(5_000), preferences.saved()]).then(() =>
+    app.quit(),
+  );
 });

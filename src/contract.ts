@@ -25,9 +25,28 @@ export interface FolderResult {
   status: FolderStatus;
   entries: VideoEntry[];
 }
+export interface SortOrder {
+  field: "name" | "modified";
+  direction: "ascending" | "descending";
+}
+// Browsing choices remembered between sessions.
+export interface Preferences {
+  /** The last selected folder that could be listed. */
+  folder?: string;
+  /** Thumbnail width in logical pixels. */
+  size: number;
+  sort: SortOrder;
+}
 export interface BrowserApi {
+  /** The saved preferences, or the initial ones for a fresh user profile. */
+  preferences(): Promise<Preferences>;
   chooseFolder(): Promise<string | undefined>;
+  /** Lists the folder in the saved sort order, and remembers it once it can be listed. */
   openFolder(folder: string): Promise<FolderResult>;
+  /** Remembers the sort order and resolves with the selected folder's entry ids in it. */
+  sort(order: SortOrder): Promise<string[]>;
+  /** Remembers the thumbnail size. */
+  setSize(width: number): void;
   /** Opens the entry's source video in its Windows default application. Resolves with an error message, or "" on success. */
   launch(id: string): Promise<string>;
   /** Extracts these entries' thumbnails before others, in this order. */
