@@ -1,6 +1,6 @@
 # Video Browser
 
-The first runnable Windows desktop slice implements [ticket 01 / issue #2](https://github.com/barnabyg/videoBrowser/issues/2): select a folder, recognise a real thumbnail, then open the source video in its Windows default application.
+A personal, offline Windows 11 desktop application, specified in [issue #1](https://github.com/barnabyg/videoBrowser/issues/1): choose a folder, recognise source videos by their thumbnails, and open one in the Windows default player. The supported target is **Windows 11 x64**.
 
 Development requires Windows x64 and Node.js **24.13.0**. From a clean checkout:
 
@@ -11,7 +11,7 @@ npm.cmd run build
 npm.cmd start
 ```
 
-Dependency/tool setup requires internet access. The application works locally offline after packaging. Run `npm.cmd run package` to produce `dist/VideoBrowser-win32-x64.zip`; extract the complete archive and run `VideoBrowser.exe`. Runtime and thumbnail tools are included.
+Dependency/tool setup requires internet access: `npm.cmd run tools` downloads the pinned FFmpeg build once and checks its SHA-256. The application works offline after packaging. Run `npm.cmd run package` to produce `dist/VideoBrowser-win32-x64.zip`; extract the complete archive and run `VideoBrowser.exe`. It contains the Electron runtime, the compiled application, `ffmpeg.exe` and `ffprobe.exe`, and needs nothing else installed. The [package README](docs/package-readme.md) is copied into the zip as its user guide.
 
 The canonical verification command is `npm.cmd run verify`. It checks formatting, lint/style, compilation/types, static bug analysis, automated tests, dependency/secret/package checks, then packaging and the extracted-package desktop smoke test. Run `npm.cmd run tools` first. Verification writes only generated evidence/build outputs and never formats or edits source.
 
@@ -82,4 +82,15 @@ Manual checks and their results are in [ticket 06 evidence](docs/ticket-06-evide
 - **Clear cache:** the **Clear cache** button after **Refresh** removes every stored thumbnail and makes the selected folder's thumbnails again, visible ones first. Preferences and source videos are untouched. Extraction under way is stopped first, and the store accepts nothing from it afterwards, so no thumbnail made before clearing is stored again.
 - **Tests:** [`tests/cache.spec.ts`](tests/cache.spec.ts) drives the app with real cache storage and a counting ffprobe wrapper, [`tests/counting-probe.mjs`](tests/counting-probe.mjs), that can hold a probe while a test changes its source. [`tests/cache-clear.spec.ts`](tests/cache-clear.spec.ts) drives eviction, with a smaller test limit, and **Clear cache**, inspecting the stored files, preferences and source videos. [`tests/cache-store.spec.ts`](tests/cache-store.spec.ts) and [`tests/reconcile.spec.ts`](tests/reconcile.spec.ts) check the store and the listing match on their own.
 
-Measurements and the investigation log are in [ticket 05 evidence](docs/ticket-05-evidence.md). Technology choices, measurements and follow-up limits of the first slice are in [ticket 01 evidence](docs/ticket-01-evidence.md). Bundled licenses and the private-distribution boundary are documented in [dependencies](docs/dependencies.md).
+## Package and integration verification
+
+[Issue #11](https://github.com/barnabyg/videoBrowser/issues/11) verifies the complete workflow from the extracted zip ([`tests/package.spec.ts`](tests/package.spec.ts)):
+
+- **Contents:** the zip holds the runtime, the compiled application, both thumbnail tools, the user guide and every licence notice, and no sources, tests, dependencies or developer tools.
+- **Workflow:** the extracted `VideoBrowser.exe` runs with Windows' own `PATH`, no developer environment variables and a fresh `%LOCALAPPDATA%`. It shows real thumbnails, keeps a damaged file openable, launches through Windows, reports a deleted source, applies Refresh and Clear cache, and restores the folder, size, sort order and stored thumbnails after a restart.
+- **Storage and offline use:** preferences and thumbnails go only to `%LOCALAPPDATA%\video-browser`. The package folder and the source videos are unchanged, and the window loads only its own files and stored thumbnails.
+- **Saving while files are held:** Windows refuses to replace a file while another program, such as a virus scanner, holds it open. Preferences and stored thumbnails therefore retry the replacement for about three seconds ([`src/replace.ts`](src/replace.ts)). Before this, a sort change could be lost; this made a test fail in CI on `main`.
+
+Environment, measurements, manual checks and untested behaviour are in [ticket 11 evidence](docs/ticket-11-evidence.md).
+
+Measurements and the investigation log for large folders are in [ticket 05 evidence](docs/ticket-05-evidence.md). Technology choices, measurements and follow-up limits of the first slice are in [ticket 01 evidence](docs/ticket-01-evidence.md). Bundled licenses and the private-distribution boundary are documented in [dependencies](docs/dependencies.md).
