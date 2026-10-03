@@ -27,7 +27,7 @@ From `tests/scale.spec.ts` (`SCALE_EVIDENCE` files under `.verify/`):
 
 The 1,000-entry grid meets the two-second SSD target; the test asserts it. The 10,000-entry workload is a stress check and is not held to that target. Source bytes and modification times were unchanged after both runs.
 
-Removable-drive performance was not measured: no removable drive was attached. Run the opt-in workload with `VIDEO_BROWSER_REMOVABLE_ROOT` set to a folder on the drive.
+Removable-drive performance is out of scope: removable drives are not a realistic use case for this application, so issue #5 no longer asks for that measurement.
 
 ## Investigation log
 

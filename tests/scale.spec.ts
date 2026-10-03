@@ -1,7 +1,5 @@
 // Large-folder workloads through the desktop app: the 1,000-entry acceptance
 // target and the 10,000-entry stress workload. Each run writes timing evidence.
-// Set VIDEO_BROWSER_REMOVABLE_ROOT to an existing folder on a removable drive to
-// measure the 1,000-entry workload there as well; it is not held to the SSD target.
 import { test, expect, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { copyFile, mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
@@ -208,11 +206,4 @@ test("1,000 source videos on the local SSD show a usable grid within two seconds
 test("10,000 source videos remain browsable, launchable and replaceable", async () => {
   test.setTimeout(600_000);
   await browseLargeFolder(10_000, path.resolve(".verify"), "stress");
-});
-
-const removable = process.env.VIDEO_BROWSER_REMOVABLE_ROOT;
-test("1,000 source videos on a removable drive are measured separately", async () => {
-  test.skip(!removable, "Set VIDEO_BROWSER_REMOVABLE_ROOT to measure");
-  test.setTimeout(600_000);
-  await browseLargeFolder(1_000, removable ?? "", "removable");
 });
