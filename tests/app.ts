@@ -137,3 +137,20 @@ export async function expectLaunched(log: string, source: string) {
     })
     .toBe(source);
 }
+
+// Sources probed so far, one line per extraction.
+export async function probed(log: string): Promise<string[]> {
+  const text = await readFile(log, "utf8").catch(() => "");
+  return text.split("\n").filter(Boolean);
+}
+
+// Only entries near the viewport show their thumbnails; a small screen may
+// leave some below it.
+export async function expectThumbnails(page: Page, names: string[]) {
+  for (const name of names) {
+    await videoCard(page, name).scrollIntoViewIfNeeded();
+    await expect(
+      page.getByRole("img", { name: `Thumbnail for ${name}` }),
+    ).toBeVisible({ timeout: 30_000 });
+  }
+}

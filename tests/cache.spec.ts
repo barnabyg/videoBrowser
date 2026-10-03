@@ -8,7 +8,6 @@ import {
 import {
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
   rename,
   rm,
@@ -19,30 +18,15 @@ import {
 import path from "node:path";
 import {
   callMain,
+  expectThumbnails,
   launchApp,
   makeVideo,
   openFolder,
+  probed,
   snapshot,
   useCountingProbe,
   videoCard,
 } from "./app";
-
-// Sources probed so far, one line per extraction.
-async function probed(log: string): Promise<string[]> {
-  const text = await readFile(log, "utf8").catch(() => "");
-  return text.split("\n").filter(Boolean);
-}
-
-// Only entries near the viewport show their thumbnails; a small screen may
-// leave some below it.
-async function expectThumbnails(page: Page, names: string[]) {
-  for (const name of names) {
-    await videoCard(page, name).scrollIntoViewIfNeeded();
-    await expect(
-      page.getByRole("img", { name: `Thumbnail for ${name}` }),
-    ).toBeVisible({ timeout: 30_000 });
-  }
-}
 
 test("revisiting a folder, also after restarting, reuses stored thumbnails without extracting again", async () => {
   const root = await mkdtemp(path.resolve(".verify/cache-revisit-"));

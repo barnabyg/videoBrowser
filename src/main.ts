@@ -3,7 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { checkAssociation } from "./association";
-import { openCache, type ThumbnailCache } from "./cache";
+import { defaultLimit, openCache, type ThumbnailCache } from "./cache";
 import { listFolder, videoExtensions } from "./folder";
 import {
   openPreferences,
@@ -50,9 +50,27 @@ let tools: Tools = bundledTools(
     : path.resolve(".tools/ffmpeg/bin"),
 );
 let generation = recipe;
+let cacheLimit = defaultLimit;
+// One cache serves every listing, so clearing it also covers earlier work.
+let cache: ThumbnailCache | undefined;
+function thumbnailCache(): ThumbnailCache {
+  cache ??= openCache(
+    path.join(app.getPath("userData"), "thumbnails"),
+    generation,
+    // The selected folder's stills stay while they can be shown.
+    { limit: cacheLimit, inUse: () => stills.values() },
+  );
+  return cache;
+}
 /** Test boundary: stands in for a release that generates thumbnails differently. */
 export function useFixtureRecipe(value: string): void {
   generation = value;
+  cache = undefined;
+}
+/** Test boundary: a smaller storage limit, in bytes, makes eviction observable. */
+export function useFixtureCacheLimit(bytes: number): void {
+  cacheLimit = bytes;
+  cache = undefined;
 }
 /** Test boundary: substitutes a controlled probe process, e.g. one that stalls. */
 export function useFixtureProbe(command: string, args: string[]): void {
@@ -78,6 +96,10 @@ async function openFolder(folder: unknown): Promise<FolderResult> {
   stills = new Map();
   queue = undefined;
   priorities = [];
+  // The previous folder's stills may have kept storage over its limit.
+  void thumbnailCache()
+    .trim()
+    .catch(() => undefined);
   if (typeof folder !== "string")
     return { folder: "", status: "invalid-path", entries: [] };
   selectedFolder = folder;
@@ -117,32 +139,59 @@ async function list(
   );
   for (const id of settled) if (!entries.has(id)) settled.delete(id);
   for (const id of stills.keys()) if (!entries.has(id)) stills.delete(id);
-  const pending = new Map(
-    listed
-      .filter((entry) => !settled.has(entry.id))
-      .map((entry) => [entry.id, entry.source]),
+  extract(
+    listed.filter((entry) => !settled.has(entry.id)),
+    signal,
   );
-  const cache = openCache(
-    path.join(app.getPath("userData"), "thumbnails"),
-    generation,
-  );
-  // Start after the IPC response, allowing the renderer to display filenames first.
-  setTimeout(() => {
-    if (signal.aborted) return;
-    queue = startQueue(
-      pending,
-      (id) => processThumbnail(id, cache, signal),
-      concurrency,
-      signal,
-    );
-    queue.prioritize(priorities);
-  }, 0);
   return {
     folder,
     status: listing.status,
     entries: listed.map(({ id, filename }) => ({ id, filename })),
     ...(refreshing ? { changes } : {}),
   };
+}
+
+// Queues extraction for these entries once the current IPC response is sent,
+// allowing the renderer to display filenames, or reset its results, first.
+function extract(
+  pending: readonly { id: string; source: string }[],
+  signal: AbortSignal,
+): void {
+  const cache = thumbnailCache();
+  const sources = new Map(pending.map((entry) => [entry.id, entry.source]));
+  setTimeout(() => {
+    if (signal.aborted) return;
+    queue = startQueue(
+      sources,
+      (id) => processThumbnail(id, cache, signal),
+      concurrency,
+      signal,
+    );
+    queue.prioritize(priorities);
+  }, 0);
+}
+
+// Removes every stored thumbnail, then makes the selected folder's thumbnails
+// again, visible ones first. Resolves with a user-facing reason the cache could
+// not be cleared, or "". Earlier work is stopped first and cannot store again.
+async function clearCache(): Promise<string> {
+  work.abort();
+  work = new AbortController();
+  queue = undefined;
+  const signal = work.signal;
+  settled = new Set();
+  stills = new Map();
+  for (const entry of entries.values()) entry.failed = false;
+  const error = await thumbnailCache()
+    .clear()
+    .then(
+      () => "",
+      () =>
+        "Some stored thumbnails could not be removed. Close other programs that may be using them and try again.",
+    );
+  // A folder opened meanwhile extracts its own entries.
+  if (!signal.aborted) extract([...entries.values()], signal);
+  return error;
 }
 
 // Resolves with a user-facing reason the source cannot be opened, or "" once
@@ -217,11 +266,15 @@ async function processThumbnail(
   };
   if (preview.image && identified)
     try {
-      const still = await cache.store(entry, {
-        image: preview.image,
-        duration: preview.duration,
-        reason: preview.reason,
-      });
+      const still = await cache.store(
+        entry,
+        {
+          image: preview.image,
+          duration: preview.duration,
+          reason: preview.reason,
+        },
+        signal,
+      );
       if (signal.aborted) return;
       // The renderer loads stored stills only while their entries are near the
       // viewport, so the folder's images are not all held in memory.
@@ -319,6 +372,10 @@ void app.whenReady().then(async () => {
   ipcMain.handle("refresh", (event) => {
     validateSender(event);
     return refresh();
+  });
+  ipcMain.handle("clear-cache", (event) => {
+    validateSender(event);
+    return clearCache();
   });
   // Entries near the viewport, nearest first; ignored unless well-formed.
   ipcMain.on("prioritize", (event, ids: unknown) => {
