@@ -90,21 +90,22 @@ export function makeVideo(target: string, seconds = 1): void {
 // Records each file's bytes and modification time, to show sources are unchanged.
 export async function snapshot(folder: string) {
   const files = (await readdir(folder)).sort();
-  return Promise.all(
-    files.map(async (file) => {
-      const source = path.join(folder, file);
-      const info = await stat(source);
-      return {
-        file,
-        modified: info.isFile() ? info.mtimeMs : 0,
-        hash: info.isFile()
-          ? createHash("sha256")
-              .update(await readFile(source))
-              .digest("hex")
-          : "folder",
-      };
-    }),
-  );
+  // One file at a time, so large folders do not exhaust file handles.
+  const result = [];
+  for (const file of files) {
+    const source = path.join(folder, file);
+    const info = await stat(source);
+    result.push({
+      file,
+      modified: info.isFile() ? info.mtimeMs : 0,
+      hash: info.isFile()
+        ? createHash("sha256")
+            .update(await readFile(source))
+            .digest("hex")
+        : "folder",
+    });
+  }
+  return result;
 }
 
 // Waits until the controlled default handler records the expected source path.
