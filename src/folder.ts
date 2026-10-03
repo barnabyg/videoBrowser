@@ -2,6 +2,7 @@
 // only on the filename extension; decoding and playback are separate capabilities.
 import { readdir } from "node:fs/promises";
 import path from "node:path";
+import type { FolderStatus } from "./contract";
 
 export const videoExtensions = new Set([
   ".mp4",
@@ -26,16 +27,7 @@ export interface ListedVideo {
 }
 
 export interface FolderListing {
-  kind:
-    | "videos"
-    | "empty"
-    | "no-videos"
-    | "invalid-path"
-    | "network"
-    | "not-found"
-    | "not-a-folder"
-    | "access-denied"
-    | "unreadable";
+  kind: FolderStatus;
   entries: ListedVideo[];
 }
 

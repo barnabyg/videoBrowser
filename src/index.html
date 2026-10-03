@@ -22,10 +22,15 @@
           <button id="choose" type="button">Choose folder…</button>
         </div>
       </form>
-      <p id="selected" aria-label="Selected folder"></p>
+      <p class="selected">
+        <span id="selected-label">Selected folder:</span>
+        <span id="selected" role="note" aria-labelledby="selected-label"></span>
+      </p>
       <p id="status" role="status">Select a folder to begin.</p>
     </header>
-    <main><div id="grid" aria-label="Source videos"></div></main>
+    <main id="browse">
+      <ul id="grid" aria-label="Source videos"></ul>
+    </main>
     <script src="renderer.js"></script>
   </body>
 </html>
