@@ -98,6 +98,8 @@ async function processThumbnails(
       );
       result.image = `data:image/png;base64,${preview.image.toString("base64")}`;
     }
+    // The folder may have changed while the still was being stored.
+    if (signal.aborted || window.isDestroyed()) break;
     window.webContents.send("thumbnail", result);
   }
 }
