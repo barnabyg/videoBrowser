@@ -129,15 +129,17 @@ test("a single click on a thumbnail, placeholder or filename launches the source
 
         // Launch from deep in the grid keeps the selected folder and scroll position.
         await writeFile(log, "{}");
-        // Measure once thumbnail loading has stopped changing the layout.
-        await expect(page.getByText("Loading thumbnail…")).toHaveCount(0, {
-          timeout: 30_000,
-        });
         const grid = page.getByRole("main");
         const scrollTop = () => grid.evaluate((element) => element.scrollTop);
         await grid.evaluate((element) => {
           element.scrollTop = element.scrollHeight;
         });
+        // Measure once the deepest entry shows its result.
+        await expect(
+          card(filler(39))
+            .getByText(/unavailable/)
+            .first(),
+        ).toBeVisible({ timeout: 30_000 });
         const position = await scrollTop();
         expect(position).toBeGreaterThan(0);
         await card(filler(39)).getByText(filler(39), { exact: true }).click();

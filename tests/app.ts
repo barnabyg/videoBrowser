@@ -41,7 +41,7 @@ export async function launchApp(root: string, extensions: string[] = []) {
 }
 
 // Replaces ffprobe with tests/stalled-probe.mjs, which never finishes for
-// sources whose filename contains "stalled" and records its process id in `log`.
+// sources whose filename contains "stalled" and appends its process id to `log`.
 export async function useStalledProbe(
   app: ElectronApplication,
   log: string,

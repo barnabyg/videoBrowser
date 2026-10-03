@@ -4,6 +4,7 @@ export interface VideoEntry {
 }
 export interface ThumbnailResult {
   id: string;
+  /** A thumbnail:// URL of the stored still, or a data URL when it could not be stored. */
   image?: string;
   duration?: number;
   reason?: string;
@@ -29,6 +30,8 @@ export interface BrowserApi {
   openFolder(folder: string): Promise<FolderResult>;
   /** Opens the entry's source video in its Windows default application. Resolves with an error message, or "" on success. */
   launch(id: string): Promise<string>;
+  /** Extracts these entries' thumbnails before others, in this order. */
+  prioritize(ids: string[]): void;
   onThumbnail(callback: (result: ThumbnailResult) => void): void;
 }
 declare global {
