@@ -46,6 +46,20 @@ function inView(locator: Locator) {
   });
 }
 
+// Hovers an entry and, when its full text extends below the grid on a short
+// screen, scrolls with the wheel as a mouse user would. The pointer stays over
+// the entry, so the text stays expanded.
+async function hoverAndRead(page: Page, card: Locator, text: Locator) {
+  await card.hover();
+  const below = await text.evaluate((element) => {
+    const view = document.getElementById("browse")?.getBoundingClientRect();
+    return view ? element.getBoundingClientRect().bottom - view.bottom : 0;
+  });
+  if (below > 0) await page.mouse.wheel(0, Math.ceil(below) + 2);
+  await expect.poll(() => clipped(text)).toBe(false);
+  await expect.poll(() => inView(text)).toBe(true);
+}
+
 function topInView(locator: Locator) {
   return locator.evaluate((element) => {
     const view = document.getElementById("browse")?.getBoundingClientRect();
@@ -85,8 +99,11 @@ test("thumbnail size starts near 320 pixels, adjusts from 160 to 640 and fits po
       const frames: { x: number; y: number; width: number; height: number }[] =
         [];
       for (const name of ["a landscape.mp4", "b portrait.mp4"]) {
-        const frame = await box(videoCard(page, name).locator(".frame"));
+        // At 640 pixels a short screen may hold only one entry.
+        await videoCard(page, name).scrollIntoViewIfNeeded();
         const image = page.getByRole("img", { name: `Thumbnail for ${name}` });
+        await expect(image).toBeVisible();
+        const frame = await box(videoCard(page, name).locator(".frame"));
         const shown = await box(image);
         expect(Math.abs(frame.width - width)).toBeLessThanOrEqual(4);
         // The image element fills the frame and `contain` scales the whole
@@ -242,9 +259,7 @@ test("long filenames stay visible and can be read in full by mouse, keyboard and
     const short = await box(videoCard(page, "short.mp4"));
     expect((await box(card)).height).toBeCloseTo(short.height, 0);
 
-    await card.hover();
-    expect(await clipped(name)).toBe(false);
-    await expect.poll(() => inView(name)).toBe(true);
+    await hoverAndRead(page, card, name);
     await page.mouse.move(0, 0);
     expect(await clipped(name)).toBe(true);
 
@@ -391,9 +406,7 @@ test("entries describe loading, duration and failures to assistive technology", 
     const damaged = videoCard(page, "damaged.mp4");
     await sizeControl(page).fill("160");
     expect(await clipped(damaged.locator(".detail"))).toBe(true);
-    await damaged.hover();
-    expect(await clipped(damaged.locator(".detail"))).toBe(false);
-    await expect(damaged.locator(".detail")).toBeInViewport({ ratio: 1 });
+    await hoverAndRead(page, damaged, damaged.locator(".detail"));
     await expect(sizeControl(page)).toHaveAccessibleName("Thumbnail size");
   } finally {
     await app.close();
