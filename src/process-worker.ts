@@ -9,13 +9,13 @@ export interface ProcessRequest {
   command: string;
   args: string[];
 }
-/** `pid` once started, so the main thread can stop it; then one `exit`. */
 export interface ProcessExit {
   id: number;
   exit: number | null;
   stdout: Uint8Array;
   error: string;
 }
+/** `pid` once started, so the main thread can stop it; then one `exit`. */
 export type ProcessMessage = { id: number; pid: number } | ProcessExit;
 
 /** Larger output stops the process; a thumbnail still is far smaller. */

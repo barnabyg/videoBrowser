@@ -51,12 +51,28 @@ const reasons = {
 };
 
 interface Job {
+  /** Known once the worker has started the process. */
+  pid?: number;
   settle(exit: ProcessExit): void;
   started(pid: number): void;
 }
 const jobs = new Map<number, Job>();
 let nextJob = 0;
 let launcher: Worker | undefined;
+const waiting: (() => void)[] = [];
+
+/**
+ * Resolves once every requested tool process has exited, or after `timeoutMs`.
+ * A process aborted before the worker reported its id is stopped when the id
+ * arrives, so waiting before quitting keeps it from outliving the application.
+ */
+export function processesStopped(timeoutMs: number): Promise<void> {
+  if (!jobs.size) return Promise.resolve();
+  return new Promise((resolve) => {
+    waiting.push(resolve);
+    setTimeout(resolve, timeoutMs).unref();
+  });
+}
 
 // Tool processes start on a worker thread; see process-worker.ts.
 function processLauncher(): Worker {
@@ -71,11 +87,14 @@ function processLauncher(): Worker {
     else {
       jobs.delete(message.id);
       job.settle(message);
+      if (!jobs.size) for (const idle of waiting.splice(0)) idle();
     }
   });
   worker.on("error", (error: Error) => {
     launcher = undefined;
     for (const [id, job] of jobs) {
+      // Its processes outlive it otherwise.
+      if (job.pid !== undefined) stop(job.pid);
       jobs.delete(id);
       job.settle({
         id,
@@ -84,6 +103,7 @@ function processLauncher(): Worker {
         error: error.message,
       });
     }
+    for (const idle of waiting.splice(0)) idle();
   });
   launcher = worker;
   return worker;
@@ -115,6 +135,7 @@ async function run(
     jobs.set(id, {
       started(started) {
         pid = started;
+        this.pid = started;
         if (signal.aborted) stop(started);
       },
       settle({ exit, stdout, error }) {

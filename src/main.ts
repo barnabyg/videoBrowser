@@ -5,7 +5,12 @@ import { randomUUID } from "node:crypto";
 import { checkAssociation } from "./association";
 import { listFolder, videoExtensions } from "./folder";
 import { startQueue, type ThumbnailQueue } from "./queue";
-import { bundledTools, extractPreview, type Tools } from "./thumbnail";
+import {
+  bundledTools,
+  extractPreview,
+  processesStopped,
+  type Tools,
+} from "./thumbnail";
 import type { FolderResult, VideoEntry, ThumbnailResult } from "./contract";
 
 let window: BrowserWindow;
@@ -214,5 +219,6 @@ void app.whenReady().then(async () => {
 });
 app.on("window-all-closed", () => {
   work.abort();
-  app.quit();
+  // A process still being started is stopped once its id is known.
+  void processesStopped(5_000).then(() => app.quit());
 });
