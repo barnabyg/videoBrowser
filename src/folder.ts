@@ -2,6 +2,7 @@
 // only on the filename extension; decoding and playback are separate capabilities.
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import type { SourceIdentity } from "./cache";
 import type { FolderStatus } from "./contract";
 
 export const videoExtensions = new Set([
@@ -21,11 +22,9 @@ export const videoExtensions = new Set([
   ".h264",
 ]);
 
-export interface ListedVideo {
+/** Size and modification time are 0 when they cannot be read. */
+export interface ListedVideo extends SourceIdentity {
   filename: string;
-  source: string;
-  /** Modification time in milliseconds since the epoch, or 0 when it cannot be read. */
-  modified: number;
 }
 
 export interface FolderListing {
@@ -67,11 +66,11 @@ export async function listFolder(folder: string): Promise<FolderListing> {
       .map(async (file) => {
         const source = path.join(folder, file.name);
         // A source whose details cannot be read stays listed and launchable.
-        const modified = await stat(source).then(
-          (info) => info.mtimeMs,
-          () => 0,
+        const { size, modified } = await stat(source).then(
+          (info) => ({ size: info.size, modified: info.mtimeMs }),
+          () => ({ size: 0, modified: 0 }),
         );
-        return { filename: file.name, source, modified };
+        return { filename: file.name, source, size, modified };
       }),
   );
   return { status: entries.length ? "videos" : "no-videos", entries };

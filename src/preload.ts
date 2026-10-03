@@ -4,6 +4,7 @@ const api: BrowserApi = {
   preferences: () => ipcRenderer.invoke("preferences"),
   chooseFolder: () => ipcRenderer.invoke("choose-folder"),
   openFolder: (folder) => ipcRenderer.invoke("open-folder", folder),
+  refresh: () => ipcRenderer.invoke("refresh"),
   sort: (order) => ipcRenderer.invoke("sort", order),
   setSize: (width) => ipcRenderer.send("set-size", width),
   launch: (id) => ipcRenderer.invoke("launch", id),

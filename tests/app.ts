@@ -10,7 +10,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 // Runs `name` from the app's own main module, the exported test boundary.
-async function callMain(
+export async function callMain(
   app: ElectronApplication,
   name: string,
   args: unknown[],
@@ -50,6 +50,22 @@ export async function useStalledProbe(
     process.execPath,
     [
       path.resolve("tests/stalled-probe.mjs"),
+      log,
+      path.resolve(".tools/ffmpeg/bin/ffprobe.exe"),
+    ],
+  ]);
+}
+
+// Replaces ffprobe with tests/counting-probe.mjs, which appends each probed
+// source to `log` before running the real ffprobe. Every extraction probes once.
+export async function useCountingProbe(
+  app: ElectronApplication,
+  log: string,
+): Promise<void> {
+  await callMain(app, "useFixtureProbe", [
+    process.execPath,
+    [
+      path.resolve("tests/counting-probe.mjs"),
       log,
       path.resolve(".tools/ffmpeg/bin/ffprobe.exe"),
     ],

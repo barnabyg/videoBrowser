@@ -35,7 +35,7 @@ test("lists only recognised video files directly in the selected folder", async 
   ]);
 });
 
-test("lists each source video's modification time for sorting", async () => {
+test("lists each source video's size and modification time for sorting and cache reuse", async () => {
   const root = await fixture(["clip.mp4"]);
   const modified = new Date(Date.UTC(2025, 5, 1, 8, 30));
   await utimes(path.join(root, "clip.mp4"), modified, modified);
@@ -43,6 +43,7 @@ test("lists each source video's modification time for sorting", async () => {
     {
       filename: "clip.mp4",
       source: path.join(root, "clip.mp4"),
+      size: 1,
       modified: modified.getTime(),
     },
   ]);
