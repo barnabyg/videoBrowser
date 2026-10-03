@@ -16,11 +16,13 @@ export interface Tool {
   command: string;
   args: readonly string[];
 }
+/** The probe (duration and streams) and still-extraction tools. */
 export interface Tools {
   probe: Tool;
   extract: Tool;
 }
 
+/** The ffprobe and ffmpeg executables in `folder`. */
 export function bundledTools(folder: string): Tools {
   return {
     probe: { command: path.join(folder, "ffprobe.exe"), args: [] },

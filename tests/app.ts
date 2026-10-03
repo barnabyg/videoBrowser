@@ -61,6 +61,11 @@ export async function openFolder(page: Page, folder: string): Promise<void> {
   await page.getByRole("button", { name: "Open folder", exact: true }).click();
 }
 
+// The playback button for a listed source video.
+export function videoCard(page: Page, filename: string) {
+  return page.getByRole("button", { name: `Open ${filename}`, exact: true });
+}
+
 export function makeVideo(target: string, seconds = 1): void {
   execFileSync(path.resolve(".tools/ffmpeg/bin/ffmpeg.exe"), [
     "-hide_banner",

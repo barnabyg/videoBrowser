@@ -19,7 +19,7 @@ let tools: Tools = bundledTools(
     ? path.join(process.resourcesPath, "tools")
     : path.resolve(".tools/ffmpeg/bin"),
 );
-// The same test boundary substitutes a controlled probe, e.g. one that stalls.
+/** Test boundary: substitutes a controlled probe process, e.g. one that stalls. */
 export function useFixtureProbe(command: string, args: string[]): void {
   tools = { ...tools, probe: { command, args } };
 }

@@ -9,6 +9,7 @@ import {
   openFolder,
   snapshot,
   useStalledProbe,
+  videoCard,
 } from "./app";
 import { createPlayer } from "./player";
 
@@ -56,7 +57,7 @@ function running(pid: number): boolean {
   }
 }
 
-test("generated media establishes preview fit, long seeking, dark-frame fallback and unknown duration", async () => {
+test("generated media establishes thumbnail fit, long seeking, dark-frame fallback and unknown duration", async () => {
   const root = await mkdtemp(path.resolve(".verify/media-"));
   const folder = path.join(root, "sources");
   await mkdir(folder);
@@ -248,7 +249,7 @@ test("generated media establishes preview fit, long seeking, dark-frame fallback
   expect(await snapshot(folder)).toEqual(before);
 });
 
-test("unsupported, damaged and unreadable sources get placeholders with distinct explanations and no dialogs", async () => {
+test("unsupported, damaged and unreadable source videos get placeholders with distinct explanations and no dialogs", async () => {
   const root = await mkdtemp(path.resolve(".verify/thumbnail-failures-"));
   const folder = path.join(root, "sources");
   await mkdir(folder);
@@ -281,18 +282,18 @@ test("unsupported, damaged and unreadable sources get placeholders with distinct
     try {
       const dialogs = await countDialogs(app);
       await openFolder(page, folder);
-      const card = (name: string) =>
-        page.getByRole("button", { name: `Open ${name}`, exact: true });
-      await expect(card("playable.mp4").locator(".frame")).toHaveText(
-        "Loading thumbnail…",
-      );
+      await expect(
+        videoCard(page, "playable.mp4").locator(".frame"),
+      ).toHaveText("Loading thumbnail…");
       await expect(page.getByText("Loading thumbnail…")).toHaveCount(0, {
         timeout: 30_000,
       });
       await expect(
         page.getByRole("img", { name: "Thumbnail for playable.mp4" }),
       ).toBeVisible();
-      await expect(card("playable.mp4").locator(".detail")).toHaveText("0:02");
+      await expect(
+        videoCard(page, "playable.mp4").locator(".detail"),
+      ).toHaveText("0:02");
       const explanations: [string, RegExp][] = [
         ["audio only.mp4", /no video picture/],
         ["unrecognised.mp4", /not recognised as a supported video/],
@@ -300,20 +301,22 @@ test("unsupported, damaged and unreadable sources get placeholders with distinct
         ["locked.mp4", /cannot be read/],
       ];
       for (const [name, explanation] of explanations) {
-        await expect(card(name).getByRole("img")).toHaveCount(0);
-        await expect(card(name).locator(".frame")).toHaveText(
+        await expect(videoCard(page, name).getByRole("img")).toHaveCount(0);
+        await expect(videoCard(page, name).locator(".frame")).toHaveText(
           new RegExp(`^Thumbnail unavailable: .*${explanation.source}`),
         );
-        await expect(card(name).locator(".detail")).toContainText(
+        await expect(videoCard(page, name).locator(".detail")).toContainText(
           "You can still open it",
         );
-        await expect(card(name)).toBeEnabled();
+        await expect(videoCard(page, name)).toBeEnabled();
       }
       // A reliably known duration is still shown when no picture can be decoded.
-      await expect(card("damaged.mp4").locator(".detail")).toHaveText(/^0:02 /);
-      await expect(card("unrecognised.mp4").locator(".detail")).toHaveText(
-        /^Thumbnail unavailable/,
-      );
+      await expect(
+        videoCard(page, "damaged.mp4").locator(".detail"),
+      ).toHaveText(/^0:02 /);
+      await expect(
+        videoCard(page, "unrecognised.mp4").locator(".detail"),
+      ).toHaveText(/^Thumbnail unavailable/);
       expect(await dialogs()).toBe(0);
     } finally {
       await app.close();
@@ -323,7 +326,7 @@ test("unsupported, damaged and unreadable sources get placeholders with distinct
   }
 });
 
-test("a stalled extraction stops at the 30-second budget, releases its process and later videos continue", async () => {
+test("a stalled extraction stops at the 30-second budget, releases its process and later source videos continue", async () => {
   test.setTimeout(120_000);
   const root = await mkdtemp(path.resolve(".verify/thumbnail-timeout-"));
   const folder = path.join(root, "sources");
@@ -344,12 +347,10 @@ test("a stalled extraction stops at the 30-second budget, releases its process a
       await openFolder(page, folder);
       const pid = await readPid(pidLog);
       const started = performance.now();
-      const card = (name: string) =>
-        page.getByRole("button", { name: `Open ${name}`, exact: true });
-      await expect(card(stalled).locator(".frame")).toHaveText(
+      await expect(videoCard(page, stalled).locator(".frame")).toHaveText(
         "Loading thumbnail…",
       );
-      await expect(card(stalled).locator(".frame")).toHaveText(
+      await expect(videoCard(page, stalled).locator(".frame")).toHaveText(
         /^Thumbnail unavailable: .*longer than 30 seconds/,
         { timeout: 45_000 },
       );
@@ -360,7 +361,7 @@ test("a stalled extraction stops at the 30-second budget, releases its process a
       await expect(
         page.getByRole("img", { name: `Thumbnail for ${later}` }),
       ).toBeVisible({ timeout: 30_000 });
-      await card(stalled).click();
+      await videoCard(page, stalled).click();
       await expectLaunched(log, path.join(folder, stalled));
       expect(await dialogs()).toBe(0);
     } finally {
@@ -371,7 +372,7 @@ test("a stalled extraction stops at the 30-second budget, releases its process a
   }
 });
 
-test("changing folder stops the previous folder's extraction and its results never reach the new grid", async () => {
+test("changing the selected folder stops the previous extraction and its results never reach the new grid", async () => {
   const root = await mkdtemp(path.resolve(".verify/thumbnail-cancel-"));
   const first = path.join(root, "first");
   const second = path.join(root, "second");
@@ -391,7 +392,6 @@ test("changing folder stops the previous folder's extraction and its results nev
     await expect(
       page.getByRole("img", { name: "Thumbnail for clip.mp4" }),
     ).toBeVisible({ timeout: 30_000 });
-    await page.waitForTimeout(1_000);
     await expect(page.getByRole("list").getByRole("listitem")).toHaveCount(1);
     await expect(page.getByText("stalled.mp4")).toHaveCount(0);
     await expect(page.getByText(/Thumbnail unavailable/)).toHaveCount(0);
