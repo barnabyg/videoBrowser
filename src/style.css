@@ -12,31 +12,37 @@ body {
   display: flex;
   flex-direction: column;
 }
+/* A compact header leaves most of the window to the grid. Controls share
+   rows and wrap only when the window is too narrow for them. */
 header {
   flex: none;
-  padding: 24px 32px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 20px 8px;
   border-bottom: 1px solid #d5dae2;
   background: white;
 }
-h1 {
-  margin: 0;
-  font-size: 26px;
-}
-header > p {
-  margin: 8px 0 16px;
-  color: #42516a;
-}
 label {
-  display: block;
-  margin-bottom: 6px;
   font-weight: 600;
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+}
+#folder-form {
+  flex: 1 1 560px;
+  min-width: 0;
 }
 .folder-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 input {
-  flex: 1;
+  flex: 1 1 200px;
   min-width: 120px;
 }
 input,
@@ -45,7 +51,7 @@ button {
   font: inherit;
   border-radius: 6px;
   border: 1px solid #9ba7b8;
-  padding: 10px 14px;
+  padding: 5px 12px;
 }
 button {
   cursor: pointer;
@@ -68,14 +74,18 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  margin-top: 14px;
+  gap: 8px 12px;
 }
-.view-controls label {
-  margin: 0;
+/* Kept whole beside or below the folder controls, wrapping only when the
+   window is narrower than all of them. */
+.toolbar > .view-controls {
+  flex: 0 0 auto;
+  max-width: 100%;
 }
+/* A width rather than a flex basis, so the row's natural width includes it. */
 #size {
-  flex: 0 1 240px;
+  flex: 0 1 auto;
+  width: 160px;
   padding: 0;
 }
 /* The sort controls follow the size, set apart from it. */
@@ -83,25 +93,31 @@ button:disabled {
   margin-right: 12px;
 }
 select {
-  padding: 8px 10px;
+  padding: 5px 8px;
   background: white;
   color: inherit;
 }
-.selected {
+/* The selected folder and status share a line of smaller text, wrapping only
+   when they do not fit. */
+.info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 24px;
+  font-size: 0.875em;
+  color: #42516a;
+}
+.info p {
+  margin: 0;
+  min-width: 0;
   overflow-wrap: anywhere;
-  margin: 14px 0 8px;
 }
 #selected-label {
   font-weight: 600;
 }
-#status {
-  margin-bottom: 0;
-  min-height: 24px;
-}
 main {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 32px;
+  padding: 20px;
 }
 #grid {
   margin: 0;
