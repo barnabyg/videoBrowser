@@ -26,13 +26,15 @@ The zip contains:
 
 Preferences and stored thumbnails are kept in `%LOCALAPPDATA%\video-browser`. Nothing is written beside the application or the source videos.
 
-CLEAN_CHECKOUT
+### Clean-checkout reproduction
+
+On 3 October 2026, commit d383d26 was cloned with `git clone --no-hardlinks` into a new folder outside the working copy, so no ignored, generated or untracked files came with it. In that folder, `npm.cmd ci` installed 114 packages, with no vulnerabilities found. `npm.cmd run tools` downloaded the FFmpeg archive from gyan.dev and verified its checksum. `npm.cmd run verify -- --no-dashboard` then passed every gate. That covered 67 tests, the dependency checks, packaging a 240,584,021-byte `dist/VideoBrowser-win32-x64.zip`, and 3 package tests. The 1,000-entry grid appeared in 154 ms and the 10,000-entry grid in 1,098 ms. Afterwards, `git status` showed no changes to tracked files. The repository's `.npmrc` keeps npm's cache in the checkout's own `.cache/npm`, so every package was downloaded again and checked against `package-lock.json`.
 
 ## Automated verification
 
 Measured on 3 October 2026: Windows 11 Home 10.0.26300, AMD Ryzen 5 7600 (12 logical processors), 96 GiB RAM, Node.js 24.14.1. Fixtures and isolated application state were on C:, a Crucial P3 NVMe SSD (CT2000P3PSSD8, NTFS, fixed). This is not the machine used for tickets 01 and 05.
 
-`npm.cmd run verify -- --no-dashboard` passed with zero warnings. It ran formatting, lint, both type checks, static analysis, the dashboard tests, all 67 desktop and focused tests, `npm audit`, the dependency and credential checks, packaging, and the 3 package tests. Every focused test from the earlier slices is kept.
+`npm.cmd run verify` passed with zero warnings, both headless (`--no-dashboard`) and with the live dashboard. The dashboard ran at http://127.0.0.1:4179, showed each stage and the test progress, and saved `.verify/verification.json`. It ran formatting, lint, both type checks, static analysis, the dashboard tests, all 67 desktop and focused tests, `npm audit`, the dependency and credential checks, packaging, and the 3 package tests. Every focused test from the earlier slices is kept.
 
 ### The extracted package
 
