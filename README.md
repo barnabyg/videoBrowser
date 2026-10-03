@@ -28,7 +28,7 @@ Desktop tests also deny and then restore read access on their own generated fixt
 - **Scope:** only files directly in the selected folder with an allowlisted video extension are listed. Subfolders are not scanned. UNC network paths (`\\server\share`) are rejected. A network drive mapped to a drive letter cannot be told apart from a local drive without extra system calls, so it is not rejected.
 - **Folder messages:** empty folders, folders without recognised videos, missing folders (including a disconnected USB drive), files, denied access, network paths and relative paths each get a distinct message. The folder controls stay at the top and only the grid scrolls.
 - **Launch:** Windows' `ShellExecute` reports success and shows its own "Open with" prompt when no application is associated with an extension. Before delegating, the app therefore checks the default application through `reg.exe`: `UserChoiceLatest`, then `UserChoice`, then `HKCR\<ext>`, then the ProgID's packaged application, `DelegateExecute` or verb commands. A missing source, an absent association and a broken association (its program no longer exists) each produce a clear error. Unclear registrations still attempt the launch. A path that `reg.exe` prints with non-ASCII characters cannot be checked reliably, so it is treated as usable.
-- **Removable drives:** browsing a USB drive uses the same enumeration as an internal disk. Physical USB selection, disconnection and reconnection remain manual checks; recovery is covered by issue #10.
+- **Removable drives:** browsing a USB drive uses the same enumeration as an internal disk. Recovering browsing context when a drive disconnects during a session is out of scope; select the folder again after reconnecting.
 
 ## Thumbnails and durations
 
