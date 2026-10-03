@@ -298,16 +298,14 @@ test("long filenames stay visible and can be read in full by mouse, keyboard and
 
 test("the header stays compact so the grid gets most of the window, and wraps without overflowing when narrow", async () => {
   const root = await mkdtemp(path.resolve(".verify/presentation-header-"));
-  const folder = path.join(
-    root,
-    `holiday videos ${"from the coast ".repeat(4)}`,
-  );
-  await mkdir(folder);
-  await writeFile(path.join(folder, "clip.mp4"), "x");
+  const folder = path.join(root, "Videos");
+  const long = path.join(root, `holiday videos ${"from the coast ".repeat(4)}`);
+  for (const each of [folder, long]) {
+    await mkdir(each);
+    await writeFile(path.join(each, "clip.mp4"), "x");
+  }
   const { app, page } = await launchApp(root);
   try {
-    await openFolder(page, folder);
-    await expect(page.getByRole("status")).toContainText("1 source video");
     const controls = [
       page.getByLabel("Folder path"),
       ...["Open folder", "Choose folder…", "Refresh", "Clear cache"].map(
@@ -344,17 +342,25 @@ test("the header stays compact so the grid gets most of the window, and wraps wi
       ).toBe(true);
     };
 
-    // At the default window size the header, even with a long selected folder,
-    // leaves at least four fifths of the height to the grid.
+    // In a typical desktop window, sized to fit a 1024 by 768 screen, the
+    // header leaves at least three quarters of the height to the grid.
+    await resizeWindow(app, 1024, 640);
+    await expect.poll(viewportWidth).toBeLessThanOrEqual(1024);
+    await openFolder(page, folder);
+    await expect(page.getByRole("status")).toContainText("1 source video");
     await expectAllShown();
     const height = await page.evaluate(() => window.innerHeight);
-    expect((await box(header)).height).toBeLessThanOrEqual(height / 5);
+    expect(height).toBeGreaterThanOrEqual(600);
+    expect((await box(header)).height).toBeLessThanOrEqual(height / 4);
     await expect(
       page.getByRole("heading", { name: "Video Browser" }),
     ).toBeAttached();
 
-    // The narrowest window wraps the controls instead of overflowing.
-    await resizeWindow(app, 640, 800);
+    // The narrowest window wraps the controls and a long selected folder
+    // instead of overflowing.
+    await resizeWindow(app, 640, 640);
+    await openFolder(page, long);
+    await expect(page.getByLabel("Selected folder")).toHaveText(long);
     await expect.poll(viewportWidth).toBeLessThanOrEqual(640);
     await expectAllShown();
   } finally {
