@@ -311,7 +311,12 @@ test("the whole workflow runs from the keyboard with visible focus, and only Ent
       await page.keyboard.type(folder);
       await page.keyboard.press("Enter");
       await expect(page.getByRole("status")).toContainText("60 source videos");
-      for (const name of ["Open folder", "Choose folder…", "Refresh"]) {
+      for (const name of [
+        "Open folder",
+        "Choose folder…",
+        "Refresh",
+        "Clear cache",
+      ]) {
         await page.keyboard.press("Tab");
         await expect(
           page.getByRole("button", { name, exact: true }),

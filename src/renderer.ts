@@ -36,6 +36,7 @@ const sortField = element<HTMLSelectElement>("sort-field");
 const sortDirection = element<HTMLSelectElement>("sort-direction");
 const choose = element<HTMLButtonElement>("choose");
 const refreshButton = element<HTMLButtonElement>("refresh");
+const clearButton = element<HTMLButtonElement>("clear-cache");
 const cards = new Map<string, HTMLButtonElement>();
 // Cards in grid order, for keyboard navigation.
 let order: HTMLButtonElement[] = [];
@@ -46,6 +47,7 @@ const results = new Map<string, ThumbnailResult>();
 // Entries within a viewport's height of the visible area.
 const near = new Set<string>();
 let selection = 0;
+const loadingMessage = "Loading thumbnail…";
 
 // Only entries near the viewport show their results. This bounds decoded image
 // memory, and keeps extraction from re-laying out a large grid for offscreen
@@ -131,6 +133,40 @@ async function refreshFolder(): Promise<void> {
     : `Refreshed. ${count(result)}, no changes.`;
 }
 
+// Removes stored thumbnails; the entries stay in place and their thumbnails
+// are made again, visible ones first.
+async function clearCache(): Promise<void> {
+  const request = selection;
+  // Entries shown now may have results made before clearing; those that
+  // follow are new. A folder opened meanwhile has only new results.
+  const shown = [...cards.keys()];
+  statusMessage.textContent = "Clearing cached thumbnails…";
+  const error = await window.browser.clearCache();
+  for (const id of shown)
+    if (cards.has(id)) {
+      results.delete(id);
+      showLoading(id);
+    }
+  if (cards.size) prioritizeNear();
+  // A folder opened or refreshed meanwhile reports its own status.
+  if (request !== selection) return;
+  statusMessage.textContent = error
+    ? `Cannot clear cached thumbnails: ${error}`
+    : cards.size
+      ? "Cleared cached thumbnails. Thumbnails are being made again."
+      : "Cleared cached thumbnails.";
+}
+
+// Returns an entry to its loading state.
+function showLoading(id: string): void {
+  const card = cards.get(id);
+  card?.querySelector(".frame")?.replaceChildren(placeholder(loadingMessage));
+  const detail = card?.querySelector(".detail");
+  if (detail) detail.textContent = "";
+  const description = document.getElementById(`description-${id}`);
+  if (description) description.textContent = loadingMessage;
+}
+
 // Shows these entries in this order, keeping the cards and results of entries
 // already shown and discarding the rest.
 function showEntries(entries: readonly VideoEntry[]): void {
@@ -160,7 +196,7 @@ function createCard(entry: VideoEntry): HTMLButtonElement {
   card.setAttribute("aria-label", `Open ${entry.filename}`);
   const frame = document.createElement("div");
   frame.className = "frame";
-  frame.append(placeholder("Loading thumbnail…"));
+  frame.append(placeholder(loadingMessage));
   // Hover or focus lays the full filename and detail over the card below.
   const text = document.createElement("span");
   text.className = "text";
@@ -178,7 +214,7 @@ function createCard(entry: VideoEntry): HTMLButtonElement {
   const description = document.createElement("span");
   description.className = "visually-hidden";
   description.id = `description-${entry.id}`;
-  description.textContent = "Loading thumbnail…";
+  description.textContent = loadingMessage;
   card.setAttribute("aria-describedby", description.id);
   card.append(frame, text, description);
   card.addEventListener("click", () => {
@@ -397,6 +433,9 @@ element<HTMLFormElement>("folder-form").addEventListener("submit", (event) => {
 });
 refreshButton.addEventListener("click", () => {
   void refreshFolder();
+});
+clearButton.addEventListener("click", () => {
+  void clearCache();
 });
 choose.addEventListener("click", () => {
   void window.browser.chooseFolder().then((folder) => {

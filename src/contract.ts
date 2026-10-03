@@ -56,6 +56,12 @@ export interface BrowserApi {
    * ids and results; added, changed and previously failed ones get new ids.
    */
   refresh(): Promise<FolderResult>;
+  /**
+   * Removes every stored thumbnail, keeping preferences and source videos, and
+   * makes the selected folder's thumbnails again; their results arrive anew.
+   * Resolves with an error message, or "" on success.
+   */
+  clearCache(): Promise<string>;
   /** Remembers the sort order and resolves with the selected folder's entry ids in it. */
   sort(order: SortOrder): Promise<string[]>;
   /** Remembers the thumbnail size. */
