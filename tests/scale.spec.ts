@@ -37,7 +37,7 @@ function storage(folder: string): string {
   }
 }
 
-// The frame of the entry `index` places down the grid (folder order).
+// The card of the entry `index` places down the grid (folder order).
 function card(page: Page, index: number) {
   return page.locator(".video").nth(index);
 }
@@ -50,7 +50,7 @@ async function stored(root: string): Promise<number> {
   return stills.length;
 }
 
-async function since(start: number): Promise<number> {
+function since(start: number): number {
   return Math.round(performance.now() - start);
 }
 
@@ -98,7 +98,7 @@ async function browseLargeFolder(
       await expect(page.getByRole("status")).toContainText(
         `${count} source videos`,
       );
-      timings.gridMs = await since(start);
+      timings.gridMs = since(start);
       // The grid does not wait for extraction.
       expect(await stored(root)).toBeLessThan(count);
 
@@ -107,7 +107,7 @@ async function browseLargeFolder(
       const scrolled = performance.now();
       await last.scrollIntoViewIfNeeded();
       await expect(last.getByRole("img")).toBeVisible({ timeout: 15_000 });
-      timings.lastEntryThumbnailMs = await since(scrolled);
+      timings.lastEntryThumbnailMs = since(scrolled);
       storedWhenLastShown = await stored(root);
       expect(storedWhenLastShown).toBeLessThan(count / 2);
 
@@ -115,7 +115,12 @@ async function browseLargeFolder(
       const rescrolled = performance.now();
       await middle.scrollIntoViewIfNeeded();
       await expect(middle.getByRole("img")).toBeVisible({ timeout: 15_000 });
-      timings.middleEntryThumbnailMs = await since(rescrolled);
+      timings.middleEntryThumbnailMs = since(rescrolled);
+
+      // Keyboard focus deep in the grid brings that entry's thumbnail too.
+      const focused = card(page, Math.floor(count / 4));
+      await focused.focus();
+      await expect(focused.getByRole("img")).toBeVisible({ timeout: 15_000 });
 
       // Images are held only near the viewport, however many stills exist.
       await expect
@@ -131,7 +136,7 @@ async function browseLargeFolder(
       const clicked = performance.now();
       await middle.click();
       await expectLaunched(log, path.join(folder, name));
-      timings.launchMs = await since(clicked);
+      timings.launchMs = since(clicked);
       await expect(page.getByRole("status")).toHaveText(
         `Opened ${name} in your default player.`,
       );
@@ -145,7 +150,7 @@ async function browseLargeFolder(
       await expect(
         page.getByRole("img", { name: "Thumbnail for clip.mp4" }),
       ).toBeVisible({ timeout: 15_000 });
-      timings.folderChangeMs = await since(changed);
+      timings.folderChangeMs = since(changed);
       await page.waitForTimeout(1_000);
       await expect(page.locator(".video")).toHaveCount(1);
       await expect(videoCard(page, "clip.mp4").locator(".detail")).toHaveText(
@@ -158,7 +163,7 @@ async function browseLargeFolder(
       await expect(page.locator(".video")).toHaveCount(count, {
         timeout: 30_000,
       });
-      timings.reopenGridMs = await since(reopened);
+      timings.reopenGridMs = since(reopened);
     } finally {
       await app.close();
     }
