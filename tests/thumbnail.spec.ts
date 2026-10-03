@@ -234,7 +234,7 @@ test("generated media establishes thumbnail fit, long seeking, dark-frame fallba
       page
         .getByRole("button", { name: "Open long.avi", exact: true })
         .locator(".detail"),
-    ).toHaveText("120:00");
+    ).toHaveText("2:00:00");
     await writeFile(
       path.join(root, "evidence.json"),
       JSON.stringify(

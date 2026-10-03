@@ -26,6 +26,19 @@
         <span id="selected-label">Selected folder:</span>
         <span id="selected" role="note" aria-labelledby="selected-label"></span>
       </p>
+      <div class="view-controls">
+        <label for="size">Thumbnail size</label>
+        <input
+          id="size"
+          type="range"
+          min="160"
+          max="640"
+          step="40"
+          value="320"
+          aria-valuetext="320 pixels wide"
+        />
+        <span id="size-value" aria-hidden="true">320 px</span>
+      </div>
       <p id="status" role="status">Select a folder to begin.</p>
     </header>
     <main id="browse">

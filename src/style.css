@@ -1,4 +1,6 @@
 :root {
+  /* Thumbnail width in logical pixels, set by the size control. */
+  --thumbnail: 320px;
   font-family: "Segoe UI", sans-serif;
   color: #192332;
   background: #f4f5f7;
@@ -56,6 +58,19 @@ button:hover {
   outline: 3px solid #176bd1;
   outline-offset: 3px;
 }
+.view-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.view-controls label {
+  margin: 0;
+}
+#size {
+  flex: 0 1 240px;
+  padding: 0;
+}
 .selected {
   overflow-wrap: anywhere;
   margin: 14px 0 8px;
@@ -77,43 +92,93 @@ main {
   padding: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  /* Fixed-width columns keep entries aligned at the chosen size; a window
+     narrower than one column shrinks it rather than scrolling sideways. */
+  grid-template-columns: repeat(auto-fill, min(var(--thumbnail), 100%));
   gap: 20px;
 }
 .video {
+  display: block;
+  position: relative;
   width: 100%;
   padding: 0;
   text-align: left;
-  overflow: hidden;
-  align-self: start;
+  line-height: 1.35;
 }
 .frame {
-  height: 240px;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 5px 5px 0 0;
   background: #e4e8ed;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #43516a;
 }
+/* A long reason starts at the top of a small frame; the detail line and
+   accessible description carry it in full. */
+.placeholder {
+  max-height: 100%;
+  overflow: hidden;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  font-size: 0.875em;
+  text-align: center;
+}
 .frame img {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
-.filename {
+/* Room for two filename lines and one detail line keeps entries aligned. */
+.text {
   display: block;
+  position: relative;
+  height: calc(2 * 1.35em + 1.35 * 0.875em + 32px);
+  background: inherit;
+}
+.body {
+  display: block;
+  background: inherit;
+}
+.filename {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   padding: 12px 14px 4px;
   overflow-wrap: anywhere;
 }
 .detail {
   display: block;
   padding: 4px 14px 12px;
-  font-size: 14px;
+  font-size: 0.875em;
   color: #42516a;
-  /* Exactly one line keeps card heights stable while thumbnails load; the
-     placeholder shows any full reason. */
-  min-height: 1lh;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Hover or focus shows the full filename and reason over the entries below,
+   without moving them. */
+.video:is(:hover, :focus) .body {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  border-bottom: 1px solid #9ba7b8;
+  box-shadow: 0 4px 8px rgb(25 35 50 / 20%);
+}
+.video:is(:hover, :focus) .filename {
+  display: block;
+}
+.video:is(:hover, :focus) .detail {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

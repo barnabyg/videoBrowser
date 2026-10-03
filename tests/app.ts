@@ -66,7 +66,7 @@ export function videoCard(page: Page, filename: string) {
   return page.getByRole("button", { name: `Open ${filename}`, exact: true });
 }
 
-export function makeVideo(target: string, seconds = 1): void {
+export function makeVideo(target: string, seconds = 1, size = "320x180"): void {
   execFileSync(path.resolve(".tools/ffmpeg/bin/ffmpeg.exe"), [
     "-hide_banner",
     "-loglevel",
@@ -74,7 +74,7 @@ export function makeVideo(target: string, seconds = 1): void {
     "-f",
     "lavfi",
     "-i",
-    "testsrc2=size=320x180:rate=10",
+    `testsrc2=size=${size}:rate=10`,
     "-t",
     String(seconds),
     "-c:v",

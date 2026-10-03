@@ -50,4 +50,16 @@ Desktop tests also deny and then restore read access on their own generated fixt
 - **Responsive window:** ffprobe/ffmpeg are started from a worker thread ([`src/process-worker.ts`](src/process-worker.ts)). In Electron the main process also runs the window, and starting Windows processes there stalled scrolling and clicks. Termination stays immediate on the main thread.
 - **Workloads:** [`tests/scale.spec.ts`](tests/scale.spec.ts) generates 1,000-entry acceptance and 10,000-entry stress folders of playable copies and writes timing evidence. Format coverage comes from the varied set in [`tests/thumbnail.spec.ts`](tests/thumbnail.spec.ts), not from the copies.
 
+## Thumbnail size, names and keyboard
+
+[Issue #6](https://github.com/barnabyg/videoBrowser/issues/6) makes the grid adjustable and usable without a mouse ([`src/renderer.ts`](src/renderer.ts), [`src/style.css`](src/style.css)):
+
+- **Size:** the **Thumbnail size** slider beside the folder controls sets the entry width from 160 to 640 logical pixels in 40-pixel steps, starting at 320. Stills are already extracted at up to 640 pixels, so a size change is a style change: nothing is re-extracted. The current entry, or otherwise the topmost visible one, keeps its place on screen. The size is not yet remembered between sessions; issue #7 adds preferences.
+- **Fit and alignment:** every entry has a 4:3 frame, two filename lines and one detail line, so rows stay aligned. Stills use `object-fit: contain`, so portrait and landscape images are shown whole.
+- **Long text:** a filename longer than two lines, or a reason longer than one, is shortened in place. Hovering over or focusing the entry shows the full filename and reason over the entries below without moving them. Keyboard focus also scrolls that text into view. Accessible names always contain the full filename.
+- **Keyboard:** Tab reaches the folder field, its buttons, the size slider and then the grid as a single stop. Inside the grid, the arrow keys, Home and End move focus without launching. Enter or Space opens the focused entry through the same path as a click. Every control shows a visible focus outline.
+- **Screen readers:** each entry is described as loading, by its spoken duration (for example "Duration 1 minute 5 seconds"), or by its failure reason. The visible duration uses `m:ss` or `h:mm:ss`.
+
+Manual checks and their results are in [ticket 06 evidence](docs/ticket-06-evidence.md).
+
 Measurements and the investigation log are in [ticket 05 evidence](docs/ticket-05-evidence.md). Technology choices, measurements and follow-up limits of the first slice are in [ticket 01 evidence](docs/ticket-01-evidence.md). Bundled licenses and the private-distribution boundary are documented in [dependencies](docs/dependencies.md).
