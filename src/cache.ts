@@ -1,18 +1,10 @@
 // Keeps generated thumbnails in application-managed per-user storage, so an
 // unchanged source video is not extracted again on a later visit or launch.
 // The storage is bounded: the least recently used thumbnails are evicted.
-import { createHash, randomUUID } from "node:crypto";
-import {
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  stat,
-  utimes,
-  writeFile,
-} from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, readdir, rm, stat, utimes } from "node:fs/promises";
 import path from "node:path";
+import { replaceFile } from "./replace";
 
 /** What identifies a source video's content for reuse: its path, size and modification time. */
 export interface SourceIdentity {
@@ -233,13 +225,8 @@ export function openCache(
         await mkdir(folder, { recursive: true });
         // Each file is replaced whole, and the record is written last, so an
         // interrupted store is never found.
-        const replace = async (file: string, data: string | Buffer) => {
-          const temporary = `${file}.${randomUUID()}.tmp`;
-          await writeFile(temporary, data);
-          await rename(temporary, file);
-        };
-        await replace(still, image);
-        await replace(record, text);
+        await replaceFile(still, image);
+        await replaceFile(record, text);
         const entry = {
           bytes: image.length + Buffer.byteLength(text),
           used: 0,

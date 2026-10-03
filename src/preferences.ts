@@ -1,8 +1,9 @@
 // Remembers browsing choices between sessions in a per-user JSON file, kept
 // apart from the application folder and the selected folders.
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Preferences, SortOrder } from "./contract";
+import { replaceFile } from "./replace";
 
 export const initialPreferences: Preferences = {
   size: 320,
@@ -67,13 +68,11 @@ export async function openPreferences(file: string): Promise<PreferenceStore> {
     update(change) {
       preferences = { ...preferences, ...change };
       const text = JSON.stringify(preferences, null, 2);
-      // One write at a time, replacing the file whole so a crash mid-write
-      // leaves the previous preferences.
+      // One write at a time, each replacing the file whole.
       writes = writes.then(async () => {
         try {
           await mkdir(path.dirname(file), { recursive: true });
-          await writeFile(`${file}.tmp`, text);
-          await rename(`${file}.tmp`, file);
+          await replaceFile(file, text);
         } catch {
           // Preferences still apply for this session.
         }
