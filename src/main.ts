@@ -4,7 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { checkAssociation } from "./association";
 import { listFolder, videoExtensions } from "./folder";
-import { extractPreview } from "./thumbnail";
+import { bundledTools, extractPreview, type Tools } from "./thumbnail";
 import type { FolderResult, VideoEntry, ThumbnailResult } from "./contract";
 
 let window: BrowserWindow;
@@ -13,6 +13,15 @@ let sources = new Map<string, string>();
 // A separate test entry point uses this exported app boundary to select a disposable extension.
 export function addFixtureExtension(extension: string): void {
   videoExtensions.add(extension);
+}
+let tools: Tools = bundledTools(
+  app.isPackaged
+    ? path.join(process.resourcesPath, "tools")
+    : path.resolve(".tools/ffmpeg/bin"),
+);
+// The same test boundary substitutes a controlled probe, e.g. one that stalls.
+export function useFixtureProbe(command: string, args: string[]): void {
+  tools = { ...tools, probe: { command, args } };
 }
 const state = process.env.VIDEO_BROWSER_STATE;
 app.setPath(
@@ -71,9 +80,6 @@ async function processThumbnails(
   pending: Map<string, string>,
   signal: AbortSignal,
 ): Promise<void> {
-  const tools = app.isPackaged
-    ? path.join(process.resourcesPath, "tools")
-    : path.resolve(".tools/ffmpeg/bin");
   const cache = path.join(app.getPath("userData"), "thumbnails");
   // Storage only enables later reuse; a failed write still shows the thumbnail.
   await mkdir(cache, { recursive: true }).catch(() => undefined);

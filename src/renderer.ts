@@ -94,13 +94,16 @@ function showThumbnail(result: ThumbnailResult): void {
     image.alt = `Thumbnail for ${card.querySelector(".filename")?.textContent ?? ""}`;
     frame.replaceChildren(image);
   } else frame.textContent = result.reason ?? "Thumbnail unavailable";
+  // The duration label is omitted when it is not reliably known.
   const duration = result.duration;
-  detail.textContent = duration
-    ? `${Math.floor(duration / 60)}:${String(Math.floor(duration % 60)).padStart(2, "0")}`
-    : "";
-  if (result.reason) {
-    detail.textContent += ` ${result.reason}`;
-  }
+  detail.textContent = [
+    duration
+      ? `${Math.floor(duration / 60)}:${String(Math.floor(duration % 60)).padStart(2, "0")}`
+      : "",
+    result.reason ?? "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 element<HTMLFormElement>("folder-form").addEventListener("submit", (event) => {
   event.preventDefault();

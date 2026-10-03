@@ -1,7 +1,32 @@
-import { _electron as electron, expect, type Page } from "@playwright/test";
+import {
+  _electron as electron,
+  expect,
+  type ElectronApplication,
+  type Page,
+} from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
+
+// Runs `name` from the app's own main module, the exported test boundary.
+async function callMain(
+  app: ElectronApplication,
+  name: string,
+  args: unknown[],
+): Promise<void> {
+  await app.evaluate(
+    ({ app }, [name, args]) => {
+      const main = process
+        .getBuiltinModule("module")
+        .createRequire(`${app.getAppPath()}/package.json`)(
+        `${app.getAppPath()}/build/main.js`,
+      ) as Record<string, (...args: unknown[]) => void>;
+      main[name]?.(...args);
+    },
+    [name, args] as const,
+  );
+}
 
 // Starts the real desktop app with isolated state. Fixture extensions are added
 // to the app's recognised set so disposable Windows associations can be used.
@@ -11,15 +36,24 @@ export async function launchApp(root: string, extensions: string[] = []) {
     env: { ...process.env, VIDEO_BROWSER_STATE: path.join(root, "state") },
   });
   for (const extension of extensions)
-    await app.evaluate(({ app }, extension) => {
-      process
-        .getBuiltinModule("module")
-        .createRequire(`${app.getAppPath()}/package.json`)(
-          `${app.getAppPath()}/build/main.js`,
-        )
-        .addFixtureExtension(extension);
-    }, extension);
+    await callMain(app, "addFixtureExtension", [extension]);
   return { app, page: await app.firstWindow() };
+}
+
+// Replaces ffprobe with tests/stalled-probe.mjs, which never finishes for
+// sources whose filename contains "stalled" and records its process id in `log`.
+export async function useStalledProbe(
+  app: ElectronApplication,
+  log: string,
+): Promise<void> {
+  await callMain(app, "useFixtureProbe", [
+    process.execPath,
+    [
+      path.resolve("tests/stalled-probe.mjs"),
+      log,
+      path.resolve(".tools/ffmpeg/bin/ffprobe.exe"),
+    ],
+  ]);
 }
 
 export async function openFolder(page: Page, folder: string): Promise<void> {
@@ -46,6 +80,26 @@ export function makeVideo(target: string, seconds = 1): void {
     "mp4",
     target,
   ]);
+}
+
+// Records each file's bytes and modification time, to show sources are unchanged.
+export async function snapshot(folder: string) {
+  const files = (await readdir(folder)).sort();
+  return Promise.all(
+    files.map(async (file) => {
+      const source = path.join(folder, file);
+      const info = await stat(source);
+      return {
+        file,
+        modified: info.isFile() ? info.mtimeMs : 0,
+        hash: info.isFile()
+          ? createHash("sha256")
+              .update(await readFile(source))
+              .digest("hex")
+          : "folder",
+      };
+    }),
+  );
 }
 
 // Waits until the controlled default handler records the expected source path.

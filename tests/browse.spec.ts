@@ -1,37 +1,16 @@
 import { test, expect } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { expectLaunched, launchApp, makeVideo, openFolder } from "./app";
+import {
+  expectLaunched,
+  launchApp,
+  makeVideo,
+  openFolder,
+  snapshot,
+} from "./app";
 import { createPlayer } from "./player";
-
-async function snapshot(folder: string) {
-  const files = (await readdir(folder)).sort();
-  return Promise.all(
-    files.map(async (file) => {
-      const source = path.join(folder, file);
-      const info = await stat(source);
-      return {
-        file,
-        modified: info.isFile() ? info.mtimeMs : 0,
-        hash: info.isFile()
-          ? createHash("sha256")
-              .update(await readFile(source))
-              .digest("hex")
-          : "folder",
-      };
-    }),
-  );
-}
 
 test("folder states have distinct messages and leave folder selection usable", async () => {
   const root = await mkdtemp(path.resolve(".verify/browse-states-"));
