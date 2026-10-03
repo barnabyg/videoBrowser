@@ -37,11 +37,17 @@ async function countDialogs(app: ElectronApplication) {
     app.evaluate(() => (globalThis as { dialogs?: number }).dialogs ?? 0);
 }
 
+// Process ids of stalled probes started so far, in start order.
+async function readPids(log: string): Promise<number[]> {
+  const text = await readFile(log, "utf8").catch(() => "");
+  return text.split("\n").filter(Boolean).map(Number);
+}
+
 async function readPid(log: string): Promise<number> {
   let pid = 0;
   await expect
     .poll(async () => {
-      pid = Number(await readFile(log, "utf8").catch(() => "0"));
+      pid = (await readPids(log))[0] ?? 0;
       return pid;
     })
     .toBeGreaterThan(0);
@@ -178,7 +184,9 @@ test("generated media establishes thumbnail fit, long seeking, dark-frame fallba
       .getByRole("button", { name: "Open folder", exact: true })
       .click();
     const evidence = [];
+    // Only entries near the viewport hold an image.
     for (const fixture of fixtures) {
+      await videoCard(page, fixture.name).scrollIntoViewIfNeeded();
       const image = page.getByRole("img", {
         name: `Thumbnail for ${fixture.name}`,
       });
@@ -197,6 +205,7 @@ test("generated media establishes thumbnail fit, long seeking, dark-frame fallba
         observedAtMs: Math.round(performance.now() - start),
       });
     }
+    await videoCard(page, "black-start.mp4").scrollIntoViewIfNeeded();
     const black = page.getByRole("img", {
       name: "Thumbnail for black-start.mp4",
     });
@@ -212,6 +221,7 @@ test("generated media establishes thumbnail fit, long seeking, dark-frame fallba
         return context.getImageData(0, 0, 1, 1).data[0];
       }),
     ).toBeGreaterThan(200);
+    await videoCard(page, "unknown.h264").scrollIntoViewIfNeeded();
     await expect(
       page.getByRole("img", { name: "Thumbnail for unknown.h264" }),
     ).toBeVisible();
@@ -335,7 +345,7 @@ test("a stalled extraction stops at the 30-second budget, releases its process a
   const pidLog = path.join(root, "probe.pid");
   const player = createPlayer(log);
   try {
-    // Entries are processed in folder order, so the stalled source comes first.
+    // The stalled source holds one of the bounded extraction slots for its budget.
     const stalled = `a stalled${player.extension}`;
     const later = `b later${player.extension}`;
     makeVideo(path.join(folder, stalled), 2);
@@ -398,4 +408,28 @@ test("changing the selected folder stops the previous extraction and its results
   } finally {
     await app.close();
   }
+});
+
+test("extraction runs a bounded number of jobs at once and closing the app stops them", async () => {
+  const root = await mkdtemp(path.resolve(".verify/thumbnail-bounded-"));
+  const folder = path.join(root, "sources");
+  await mkdir(folder);
+  const pidLog = path.join(root, "probe.pid");
+  for (const name of ["stalled 1.mp4", "stalled 2.mp4", "stalled 3.mp4"])
+    makeVideo(path.join(folder, name));
+  const { app, page } = await launchApp(root);
+  let pids: number[] = [];
+  try {
+    await useStalledProbe(app, pidLog);
+    await openFolder(page, folder);
+    await expect.poll(() => readPids(pidLog)).toHaveLength(2);
+    // The third job waits for a free slot rather than starting alongside them.
+    await page.waitForTimeout(3_000);
+    pids = await readPids(pidLog);
+    expect(pids).toHaveLength(2);
+    expect(pids.every(running)).toBe(true);
+  } finally {
+    await app.close();
+  }
+  await expect.poll(() => pids.some(running), { timeout: 5_000 }).toBe(false);
 });

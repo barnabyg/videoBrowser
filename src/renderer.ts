@@ -28,13 +28,51 @@ const statusMessage = element<HTMLParagraphElement>("status");
 const selected = element<HTMLSpanElement>("selected");
 const scroller = element<HTMLElement>("browse");
 const cards = new Map<string, HTMLButtonElement>();
-const earlyResults = new Map<string, ThumbnailResult>();
+// Results may arrive before their cards are built.
+const results = new Map<string, ThumbnailResult>();
+// Entries within a viewport's height of the visible area.
+const near = new Set<string>();
 let selection = 0;
+
+// Only entries near the viewport show their results. This bounds decoded image
+// memory, and keeps extraction from re-laying out a large grid for offscreen
+// entries; scrolling back shows stored results and reloads stills.
+const observer = new IntersectionObserver(
+  (changes) => {
+    for (const change of changes) {
+      const id = (change.target as HTMLElement).dataset.id ?? "";
+      if (change.isIntersecting) {
+        near.add(id);
+        present(id);
+      } else if (near.delete(id))
+        cards.get(id)?.querySelector(".frame img")?.remove();
+    }
+    prioritizeNear();
+  },
+  { root: scroller, rootMargin: "100% 0px" },
+);
+
+// Asks for the missing thumbnails nearest the middle of the viewport first.
+function prioritizeNear(): void {
+  const view = scroller.getBoundingClientRect();
+  const middle = view.top + view.height / 2;
+  const distance = (id: string) => {
+    const box = cards.get(id)?.getBoundingClientRect();
+    return box ? Math.abs(box.top + box.height / 2 - middle) : Infinity;
+  };
+  const wanted = [...near].filter((id) => !results.has(id));
+  const order = new Map(wanted.map((id) => [id, distance(id)]));
+  window.browser.prioritize(
+    wanted.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
+  );
+}
 
 async function selectFolder(folder: string): Promise<void> {
   const current = ++selection;
+  observer.disconnect();
   cards.clear();
-  earlyResults.clear();
+  results.clear();
+  near.clear();
   grid.replaceChildren();
   scroller.scrollTop = 0;
   statusMessage.textContent = "Reading folder…";
@@ -49,6 +87,7 @@ async function selectFolder(folder: string): Promise<void> {
   for (const entry of result.entries) {
     const card = document.createElement("button");
     card.className = "video";
+    card.dataset.id = entry.id;
     card.setAttribute("aria-label", `Open ${entry.filename}`);
     const frame = document.createElement("div");
     frame.className = "frame";
@@ -75,25 +114,25 @@ async function selectFolder(folder: string): Promise<void> {
     fragment.append(item);
   }
   grid.append(fragment);
-  for (const result of earlyResults.values()) showThumbnail(result);
-  earlyResults.clear();
+  for (const card of cards.values()) observer.observe(card);
 }
 
-function showThumbnail(result: ThumbnailResult): void {
-  const card = cards.get(result.id);
-  if (!card) {
-    earlyResults.set(result.id, result);
-    return;
-  }
-  const frame = card.querySelector(".frame");
-  const detail = card.querySelector(".detail");
-  if (!frame || !detail) return;
-  if (result.image) {
+// Shows an entry's thumbnail or reason, and its duration, if it is near the viewport.
+function present(id: string): void {
+  const card = cards.get(id);
+  const result = results.get(id);
+  const frame = card?.querySelector(".frame");
+  const detail = card?.querySelector(".detail");
+  if (!near.has(id) || !result || !frame || !detail) return;
+  if (!result.image)
+    frame.textContent = result.reason ?? "Thumbnail unavailable";
+  else if (!frame.querySelector("img")) {
     const image = document.createElement("img");
+    image.crossOrigin = "anonymous";
     image.src = result.image;
-    image.alt = `Thumbnail for ${card.querySelector(".filename")?.textContent ?? ""}`;
+    image.alt = `Thumbnail for ${card?.querySelector(".filename")?.textContent ?? ""}`;
     frame.replaceChildren(image);
-  } else frame.textContent = result.reason ?? "Thumbnail unavailable";
+  }
   // The duration label is omitted when it is not reliably known.
   const duration = result.duration;
   detail.textContent = [
@@ -117,4 +156,7 @@ element<HTMLButtonElement>("choose").addEventListener("click", () => {
     }
   });
 });
-window.browser.onThumbnail(showThumbnail);
+window.browser.onThumbnail((result) => {
+  results.set(result.id, result);
+  present(result.id);
+});

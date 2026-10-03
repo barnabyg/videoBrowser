@@ -4,6 +4,7 @@ const api: BrowserApi = {
   chooseFolder: () => ipcRenderer.invoke("choose-folder"),
   openFolder: (folder) => ipcRenderer.invoke("open-folder", folder),
   launch: (id) => ipcRenderer.invoke("launch", id),
+  prioritize: (ids) => ipcRenderer.send("prioritize", ids),
   onThumbnail: (callback) => {
     ipcRenderer.on("thumbnail", (_event, result: ThumbnailResult) =>
       callback(result),

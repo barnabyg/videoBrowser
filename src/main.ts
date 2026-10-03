@@ -1,15 +1,27 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from "electron";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { checkAssociation } from "./association";
 import { listFolder, videoExtensions } from "./folder";
-import { bundledTools, extractPreview, type Tools } from "./thumbnail";
+import { startQueue, type ThumbnailQueue } from "./queue";
+import {
+  bundledTools,
+  extractPreview,
+  processesStopped,
+  type Tools,
+} from "./thumbnail";
 import type { FolderResult, VideoEntry, ThumbnailResult } from "./contract";
 
 let window: BrowserWindow;
 let work = new AbortController();
 let sources = new Map<string, string>();
+// Stored stills of the selected folder's entries, served as thumbnail://<id>.
+let stills = new Map<string, string>();
+let queue: ThumbnailQueue | undefined;
+let priorities: readonly string[] = [];
+/** Extraction jobs running at once; each uses one decoder thread. */
+const concurrency = 2;
 // A separate test entry point uses this exported app boundary to select a disposable extension.
 export function addFixtureExtension(extension: string): void {
   videoExtensions.add(extension);
@@ -39,6 +51,9 @@ async function openFolder(folder: unknown): Promise<FolderResult> {
   work.abort();
   work = new AbortController();
   sources = new Map();
+  stills = new Map();
+  queue = undefined;
+  priorities = [];
   const signal = work.signal;
   if (typeof folder !== "string")
     return { folder: "", status: "invalid-path", entries: [] };
@@ -49,10 +64,22 @@ async function openFolder(folder: unknown): Promise<FolderResult> {
     sources.set(id, video.source);
     return { id, filename: video.filename };
   });
-  const pending = new Map(sources);
+  const cache = path.join(app.getPath("userData"), "thumbnails");
   // Start after the IPC response, allowing the renderer to display filenames first.
+  // Storage only enables display and later reuse; a failed mkdir still extracts.
   setTimeout(() => {
-    void processThumbnails(pending, signal);
+    void mkdir(cache, { recursive: true })
+      .catch(() => undefined)
+      .then(() => {
+        if (signal.aborted) return;
+        queue = startQueue(
+          sources,
+          (id, source) => processThumbnail(id, source, cache, signal),
+          concurrency,
+          signal,
+        );
+        queue.prioritize(priorities);
+      });
   }, 0);
   return { folder, status: listing.status, entries };
 }
@@ -76,35 +103,61 @@ async function launch(source: string): Promise<string> {
   return error ? `Windows could not open this video: ${error}` : "";
 }
 
-async function processThumbnails(
-  pending: Map<string, string>,
+async function processThumbnail(
+  id: string,
+  source: string,
+  cache: string,
   signal: AbortSignal,
 ): Promise<void> {
-  const cache = path.join(app.getPath("userData"), "thumbnails");
-  // Storage only enables later reuse; a failed write still shows the thumbnail.
-  await mkdir(cache, { recursive: true }).catch(() => undefined);
-  for (const [id, source] of pending) {
-    if (signal.aborted) break;
-    const preview = await extractPreview(source, tools, signal);
-    if (signal.aborted || window.isDestroyed()) break;
-    const result: ThumbnailResult = {
-      id,
-      duration: preview.duration,
-      reason: preview.reason,
-    };
-    if (preview.image) {
-      await writeFile(path.join(cache, `${id}.png`), preview.image).catch(
-        () => undefined,
-      );
+  const preview = await extractPreview(source, tools, signal);
+  if (signal.aborted || window.isDestroyed()) return;
+  const result: ThumbnailResult = {
+    id,
+    duration: preview.duration,
+    reason: preview.reason,
+  };
+  if (preview.image) {
+    // The renderer loads stored stills only while their entries are near the
+    // viewport, so the folder's images are not all held in memory.
+    const still = path.join(cache, `${id}.png`);
+    try {
+      await writeFile(still, preview.image);
+      if (signal.aborted) return;
+      stills.set(id, still);
+      result.image = `thumbnail://${id}`;
+    } catch {
       result.image = `data:image/png;base64,${preview.image.toString("base64")}`;
     }
-    // The folder may have changed while the still was being stored.
-    if (signal.aborted || window.isDestroyed()) break;
-    window.webContents.send("thumbnail", result);
   }
+  // The folder may have changed while the still was being stored.
+  if (signal.aborted || window.isDestroyed()) return;
+  window.webContents.send("thumbnail", result);
 }
 
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "thumbnail",
+    privileges: { standard: true, secure: true, corsEnabled: true },
+  },
+]);
+
 void app.whenReady().then(async () => {
+  // Serves only stills of the selected folder's entries.
+  protocol.handle("thumbnail", async (request) => {
+    const still = stills.get(new URL(request.url).hostname);
+    const image = still
+      ? await readFile(still).catch(() => undefined)
+      : undefined;
+    return image
+      ? new Response(new Uint8Array(image), {
+          // Keeps stills readable as ordinary page images, e.g. in a canvas.
+          headers: {
+            "content-type": "image/png",
+            "access-control-allow-origin": "*",
+          },
+        })
+      : new Response(null, { status: 404 });
+  });
   window = new BrowserWindow({
     width: 1120,
     height: 800,
@@ -121,12 +174,16 @@ void app.whenReady().then(async () => {
   });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
+  function trusted(
+    event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent,
+  ): boolean {
+    return (
+      event.sender === window.webContents &&
+      event.senderFrame === window.webContents.mainFrame
+    );
+  }
   function validateSender(event: Electron.IpcMainInvokeEvent): void {
-    if (
-      event.sender !== window.webContents ||
-      event.senderFrame !== window.webContents.mainFrame
-    )
-      throw new Error("Untrusted IPC sender");
+    if (!trusted(event)) throw new Error("Untrusted IPC sender");
   }
   ipcMain.handle("choose-folder", async (event) => {
     validateSender(event);
@@ -140,6 +197,17 @@ void app.whenReady().then(async () => {
     validateSender(event);
     return openFolder(folder);
   });
+  // Entries near the viewport, nearest first; ignored unless well-formed.
+  ipcMain.on("prioritize", (event, ids: unknown) => {
+    if (
+      !trusted(event) ||
+      !Array.isArray(ids) ||
+      !ids.every((id) => typeof id === "string")
+    )
+      return;
+    priorities = ids as string[];
+    queue?.prioritize(priorities);
+  });
   ipcMain.handle("launch", (event, id: unknown) => {
     validateSender(event);
     const source = typeof id === "string" ? sources.get(id) : undefined;
@@ -151,5 +219,6 @@ void app.whenReady().then(async () => {
 });
 app.on("window-all-closed", () => {
   work.abort();
-  app.quit();
+  // A process still being started is stopped once its id is known.
+  void processesStopped(5_000).then(() => app.quit());
 });
