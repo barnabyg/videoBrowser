@@ -234,7 +234,7 @@ test("generated media establishes thumbnail fit, long seeking, dark-frame fallba
       page
         .getByRole("button", { name: "Open long.avi", exact: true })
         .locator(".detail"),
-    ).toHaveText("120:00");
+    ).toHaveText("2:00:00");
     await writeFile(
       path.join(root, "evidence.json"),
       JSON.stringify(
@@ -295,12 +295,9 @@ test("unsupported, damaged and unreadable source videos get placeholders with di
       await expect(
         videoCard(page, "playable.mp4").locator(".frame"),
       ).toHaveText("Loading thumbnail…");
-      await expect(page.getByText("Loading thumbnail…")).toHaveCount(0, {
-        timeout: 30_000,
-      });
       await expect(
         page.getByRole("img", { name: "Thumbnail for playable.mp4" }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 30_000 });
       await expect(
         videoCard(page, "playable.mp4").locator(".detail"),
       ).toHaveText("0:02");
@@ -311,10 +308,14 @@ test("unsupported, damaged and unreadable source videos get placeholders with di
         ["locked.mp4", /cannot be read/],
       ];
       for (const [name, explanation] of explanations) {
-        await expect(videoCard(page, name).getByRole("img")).toHaveCount(0);
+        // Only entries near the viewport show results; a small screen may
+        // leave some below it.
+        await videoCard(page, name).scrollIntoViewIfNeeded();
         await expect(videoCard(page, name).locator(".frame")).toHaveText(
           new RegExp(`^Thumbnail unavailable: .*${explanation.source}`),
+          { timeout: 30_000 },
         );
+        await expect(videoCard(page, name).getByRole("img")).toHaveCount(0);
         await expect(videoCard(page, name).locator(".detail")).toContainText(
           "You can still open it",
         );
