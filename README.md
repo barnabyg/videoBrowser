@@ -54,12 +54,20 @@ Desktop tests also deny and then restore read access on their own generated fixt
 
 [Issue #6](https://github.com/barnabyg/videoBrowser/issues/6) makes the grid adjustable and usable without a mouse ([`src/renderer.ts`](src/renderer.ts), [`src/style.css`](src/style.css)):
 
-- **Size:** the **Thumbnail size** slider beside the folder controls sets the entry width from 160 to 640 logical pixels in 40-pixel steps, starting at 320. Stills are already extracted at up to 640 pixels, so a size change is a style change: nothing is re-extracted. The current entry, or otherwise the topmost visible one, keeps its place on screen. The size is not yet remembered between sessions; issue #7 adds preferences.
+- **Size:** the **Thumbnail size** slider beside the folder controls sets the entry width from 160 to 640 logical pixels in 40-pixel steps, starting at 320. Stills are already extracted at up to 640 pixels, so a size change is a style change: nothing is re-extracted. The current entry, or otherwise the topmost visible one, keeps its place on screen. The size is remembered between sessions.
 - **Fit and alignment:** every entry has a 4:3 frame, two filename lines and one detail line, so rows stay aligned. Stills use `object-fit: contain`, so portrait and landscape images are shown whole.
 - **Long text:** a filename longer than two lines, or a reason longer than one, is shortened in place. Hovering over or focusing the entry shows the full filename and reason over the entries below without moving them. Keyboard focus also scrolls that text into view. Accessible names always contain the full filename.
 - **Keyboard:** Tab reaches the folder field, its buttons, the size slider and then the grid as a single stop. Inside the grid, the arrow keys, Home and End move focus without launching. Enter or Space opens the focused entry through the same path as a click. Every control shows a visible focus outline.
 - **Screen readers:** each entry is described as loading, by its spoken duration (for example "Duration 1 minute 5 seconds"), or by its failure reason. The visible duration uses `m:ss` or `h:mm:ss`.
 
 Manual checks and their results are in [ticket 06 evidence](docs/ticket-06-evidence.md).
+
+## Sorting and preferences
+
+[Issue #7](https://github.com/barnabyg/videoBrowser/issues/7) sorts source videos and restores browsing choices on startup ([`src/sort.ts`](src/sort.ts), [`src/preferences.ts`](src/preferences.ts)):
+
+- **Sorting:** the **Sort by** (Filename or Date modified) and **Order** controls follow the size slider. Filename order is natural (video2 before video10) and ignores case and accents; it starts ascending. Equal dates fall back to ascending filename order in both directions, a source whose date cannot be read sorts as the oldest, and names that compare equal (video1 and video01, cafe and café) fall back to code-unit order, so the order is always the same. Re-sorting moves the existing entries without re-extracting and returns to the start of the grid. Entries are queued for extraction in the order of the folder's first listing; after a re-sort, visible entries still come first.
+- **Preferences:** the last selected folder that could be listed, the thumbnail size and the sort order are saved to `preferences.json` in the per-user state folder (`%LOCALAPPDATA%\video-browser`, beside the thumbnail store), never beside the application or the source videos. A missing or damaged file, or an invalid value, falls back to the initial choice for that value. Pending changes are saved before the app quits.
+- **Startup:** a fresh profile starts at 320 pixels and filename ascending, and asks for a folder. Later launches restore the size and sort order and reopen the saved folder. If that folder is unavailable, for example on a disconnected USB drive, the status explains why and focus moves to **Choose folder…**; the saved folder is kept until another folder is opened.
 
 Measurements and the investigation log are in [ticket 05 evidence](docs/ticket-05-evidence.md). Technology choices, measurements and follow-up limits of the first slice are in [ticket 01 evidence](docs/ticket-01-evidence.md). Bundled licenses and the private-distribution boundary are documented in [dependencies](docs/dependencies.md).

@@ -1,5 +1,6 @@
 type ThumbnailResult = import("./contract").ThumbnailResult;
 type FolderStatus = import("./contract").FolderStatus;
+type SortOrder = import("./contract").SortOrder;
 
 const messages: Record<Exclude<FolderStatus, "videos">, string> = {
   empty: "This folder is empty. Choose another folder.",
@@ -29,6 +30,9 @@ const selected = element<HTMLSpanElement>("selected");
 const scroller = element<HTMLElement>("browse");
 const size = element<HTMLInputElement>("size");
 const sizeValue = element<HTMLSpanElement>("size-value");
+const sortField = element<HTMLSelectElement>("sort-field");
+const sortDirection = element<HTMLSelectElement>("sort-direction");
+const choose = element<HTMLButtonElement>("choose");
 const cards = new Map<string, HTMLButtonElement>();
 // Cards in grid order, for keyboard navigation.
 let order: HTMLButtonElement[] = [];
@@ -73,7 +77,11 @@ function prioritizeNear(): void {
   );
 }
 
-async function selectFolder(folder: string): Promise<void> {
+// Statuses of a folder that exists and could be read.
+const listable = new Set<FolderStatus>(["videos", "empty", "no-videos"]);
+
+// `restoring` is set when reopening the last session's folder at startup.
+async function selectFolder(folder: string, restoring = false): Promise<void> {
   const request = ++selection;
   observer.disconnect();
   cards.clear();
@@ -87,10 +95,14 @@ async function selectFolder(folder: string): Promise<void> {
   const result = await window.browser.openFolder(folder);
   if (request !== selection) return;
   selected.textContent = result.folder;
-  statusMessage.textContent =
-    result.status === "videos"
-      ? `${result.entries.length} source ${result.entries.length === 1 ? "video" : "videos"}. Click a video, or press Enter on it, to open it in your default player.`
-      : messages[result.status];
+  const status = result.status;
+  if (status === "videos")
+    statusMessage.textContent = `${result.entries.length} source ${result.entries.length === 1 ? "video" : "videos"}. Click a video, or press Enter on it, to open it in your default player.`;
+  else if (restoring && !listable.has(status)) {
+    statusMessage.textContent = `Your last selected folder is not available. ${messages[status]}`;
+    // Offers the folder chooser; Enter or Space opens it.
+    choose.focus();
+  } else statusMessage.textContent = messages[status];
   const fragment = document.createDocumentFragment();
   for (const entry of result.entries) {
     const card = document.createElement("button");
@@ -286,11 +298,60 @@ function resize(width: number): void {
 size.addEventListener("input", () => {
   resize(size.valueAsNumber);
 });
+// Saved once a value is chosen, not at every step while dragging.
+size.addEventListener("change", () => {
+  chosen.add(size);
+  window.browser.setSize(size.valueAsNumber);
+});
+
+// Controls changed in this session; startup restoration leaves them alone.
+const chosen = new Set<HTMLElement>();
+
+function sortOrder(): SortOrder {
+  return {
+    field: sortField.value === "modified" ? "modified" : "name",
+    direction:
+      sortDirection.value === "descending" ? "descending" : "ascending",
+  };
+}
+
+// Names each direction after what it means for the chosen field.
+function nameDirections(): void {
+  const [ascending, descending] =
+    sortField.value === "modified"
+      ? ["Oldest first", "Newest first"]
+      : ["A to Z", "Z to A"];
+  const [first, second] = sortDirection.options;
+  if (first) first.text = ascending ?? "";
+  if (second) second.text = descending ?? "";
+}
+
+// Reorders the existing entries, keeping their thumbnails and results, and
+// returns to the start of the grid.
+async function applySort(): Promise<void> {
+  nameDirections();
+  const request = selection;
+  const ids = await window.browser.sort(sortOrder());
+  // A folder still being read is listed in the new order instead.
+  if (request !== selection || ids.length !== order.length) return;
+  order = ids
+    .map((id) => cards.get(id))
+    .filter((card): card is HTMLButtonElement => !!card);
+  grid.replaceChildren(...order.map((card) => card.parentElement ?? card));
+  scroller.scrollTop = 0;
+  if (order[0]) makeCurrent(order[0]);
+  statusMessage.textContent = `Sorted by ${sortField.selectedOptions[0]?.text.toLowerCase() ?? ""}, ${sortDirection.selectedOptions[0]?.text.toLowerCase() ?? ""}.`;
+}
+for (const control of [sortField, sortDirection])
+  control.addEventListener("change", () => {
+    chosen.add(control);
+    void applySort();
+  });
 element<HTMLFormElement>("folder-form").addEventListener("submit", (event) => {
   event.preventDefault();
   void selectFolder(folderInput.value);
 });
-element<HTMLButtonElement>("choose").addEventListener("click", () => {
+choose.addEventListener("click", () => {
   void window.browser.chooseFolder().then((folder) => {
     if (folder) {
       folderInput.value = folder;
@@ -301,4 +362,20 @@ element<HTMLButtonElement>("choose").addEventListener("click", () => {
 window.browser.onThumbnail((result) => {
   results.set(result.id, result);
   present(result.id);
+});
+
+// Restores the last session's size and sort order, then its folder.
+void window.browser.preferences().then((saved) => {
+  if (!chosen.has(size)) {
+    size.value = String(saved.size);
+    resize(saved.size);
+  }
+  if (!chosen.has(sortField)) sortField.value = saved.sort.field;
+  if (!chosen.has(sortDirection)) sortDirection.value = saved.sort.direction;
+  nameDirections();
+  // The user may already have chosen a folder.
+  if (saved.folder && selection === 0) {
+    folderInput.value = saved.folder;
+    void selectFolder(saved.folder, true);
+  }
 });

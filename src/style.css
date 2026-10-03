@@ -40,6 +40,7 @@ input {
   min-width: 120px;
 }
 input,
+select,
 button {
   font: inherit;
   border-radius: 6px;
@@ -60,6 +61,7 @@ button:hover {
 }
 .view-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin-top: 14px;
@@ -70,6 +72,15 @@ button:hover {
 #size {
   flex: 0 1 240px;
   padding: 0;
+}
+/* The sort controls follow the size, set apart from it. */
+#size-value {
+  margin-right: 12px;
+}
+select {
+  padding: 8px 10px;
+  background: white;
+  color: inherit;
 }
 .selected {
   overflow-wrap: anywhere;

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { listFolder } from "../src/folder";
 
@@ -32,6 +32,19 @@ test("lists only recognised video files directly in the selected folder", async 
   expect(listing.entries.map((entry) => entry.source).sort()).toEqual([
     path.join(root, "a café.mkv"),
     path.join(root, "b clip.MP4"),
+  ]);
+});
+
+test("lists each source video's modification time for sorting", async () => {
+  const root = await fixture(["clip.mp4"]);
+  const modified = new Date(Date.UTC(2025, 5, 1, 8, 30));
+  await utimes(path.join(root, "clip.mp4"), modified, modified);
+  expect((await listFolder(root)).entries).toEqual([
+    {
+      filename: "clip.mp4",
+      source: path.join(root, "clip.mp4"),
+      modified: modified.getTime(),
+    },
   ]);
 });
 
