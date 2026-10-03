@@ -33,11 +33,15 @@ async function probed(log: string): Promise<string[]> {
   return text.split("\n").filter(Boolean);
 }
 
+// Only entries near the viewport show their thumbnails; a small screen may
+// leave some below it.
 async function expectThumbnails(page: Page, names: string[]) {
-  for (const name of names)
+  for (const name of names) {
+    await videoCard(page, name).scrollIntoViewIfNeeded();
     await expect(
       page.getByRole("img", { name: `Thumbnail for ${name}` }),
     ).toBeVisible({ timeout: 30_000 });
+  }
 }
 
 test("revisiting a folder, also after restarting, reuses stored thumbnails without extracting again", async () => {
@@ -139,10 +143,10 @@ test("Refresh updates the grid for added, removed and changed source videos and 
     await useCountingProbe(app, log);
     await openFolder(page, folder);
     await expectThumbnails(page, names);
-    // Marks the kept entry's image, to show Refresh leaves it in place.
-    await page
-      .getByRole("img", { name: "Thumbnail for kept.mp4" })
-      .evaluate((image) => image.setAttribute("data-marked", ""));
+    // Marks the kept entry, to show Refresh leaves it in place.
+    await videoCard(page, "kept.mp4").evaluate((card) =>
+      card.setAttribute("data-marked", ""),
+    );
     const extracted = (await probed(log)).length;
 
     makeVideo(path.join(folder, "added.mp4"));
@@ -190,9 +194,10 @@ test("Refresh updates the grid for added, removed and changed source videos and 
     await expect(videoCard(page, "changed.mp4").locator(".detail")).toHaveText(
       "0:02",
     );
-    await expect(
-      page.getByRole("img", { name: "Thumbnail for kept.mp4" }),
-    ).toHaveAttribute("data-marked", "");
+    await expect(videoCard(page, "kept.mp4")).toHaveAttribute(
+      "data-marked",
+      "",
+    );
     expect((await probed(log)).slice(extracted).sort()).toEqual(
       [
         "added.mp4",
