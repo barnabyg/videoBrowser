@@ -24,6 +24,14 @@ export interface FolderResult {
   folder: string;
   status: FolderStatus;
   entries: VideoEntry[];
+  /** After Refresh: how the listing differs from the entries shown before. */
+  changes?: FolderChanges;
+}
+export interface FolderChanges {
+  added: number;
+  removed: number;
+  /** Source videos still present whose size or modification time changed. */
+  changed: number;
 }
 export interface SortOrder {
   field: "name" | "modified";
@@ -43,6 +51,11 @@ export interface BrowserApi {
   chooseFolder(): Promise<string | undefined>;
   /** Lists the folder in the saved sort order, and remembers it once it can be listed. */
   openFolder(folder: string): Promise<FolderResult>;
+  /**
+   * Lists the selected folder again. Unchanged source videos keep their entry
+   * ids and results; added, changed and previously failed ones get new ids.
+   */
+  refresh(): Promise<FolderResult>;
   /** Remembers the sort order and resolves with the selected folder's entry ids in it. */
   sort(order: SortOrder): Promise<string[]>;
   /** Remembers the thumbnail size. */

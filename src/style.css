@@ -55,6 +55,11 @@ button {
 button:hover {
   background: #eaf1ff;
 }
+button:disabled {
+  cursor: default;
+  background: #f4f5f7;
+  color: #5c6676;
+}
 :focus-visible {
   outline: 3px solid #176bd1;
   outline-offset: 3px;

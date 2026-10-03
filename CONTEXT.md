@@ -15,6 +15,9 @@ The original video file represented in the browser, whether or not an image can 
 A single still image from a source video, used to help the user recognise that video before opening it.
 _Avoid_: Preview video
 
+**Source identity**:
+The path, size and modification time of a source video. A stored thumbnail is reused only while its source video's identity is unchanged.
+
 **Placeholder**:
 A visual stand-in for a thumbnail that is not yet available or cannot be generated.
 

@@ -1,6 +1,8 @@
 type ThumbnailResult = import("./contract").ThumbnailResult;
 type FolderStatus = import("./contract").FolderStatus;
 type SortOrder = import("./contract").SortOrder;
+type VideoEntry = import("./contract").VideoEntry;
+type FolderResult = import("./contract").FolderResult;
 
 const messages: Record<Exclude<FolderStatus, "videos">, string> = {
   empty: "This folder is empty. Choose another folder.",
@@ -33,6 +35,7 @@ const sizeValue = element<HTMLSpanElement>("size-value");
 const sortField = element<HTMLSelectElement>("sort-field");
 const sortDirection = element<HTMLSelectElement>("sort-direction");
 const choose = element<HTMLButtonElement>("choose");
+const refreshButton = element<HTMLButtonElement>("refresh");
 const cards = new Map<string, HTMLButtonElement>();
 // Cards in grid order, for keyboard navigation.
 let order: HTMLButtonElement[] = [];
@@ -83,72 +86,113 @@ const listable = new Set<FolderStatus>(["videos", "empty", "no-videos"]);
 // `restoring` is set when reopening the last session's folder at startup.
 async function selectFolder(folder: string, restoring = false): Promise<void> {
   const request = ++selection;
-  observer.disconnect();
-  cards.clear();
-  order = [];
-  current = undefined;
-  results.clear();
-  near.clear();
-  grid.replaceChildren();
+  showEntries([]);
   scroller.scrollTop = 0;
+  // Refresh lists the folder again, e.g. once its USB drive is reconnected.
+  refreshButton.disabled = false;
   statusMessage.textContent = "Reading folder…";
   const result = await window.browser.openFolder(folder);
   if (request !== selection) return;
   selected.textContent = result.folder;
   const status = result.status;
   if (status === "videos")
-    statusMessage.textContent = `${result.entries.length} source ${result.entries.length === 1 ? "video" : "videos"}. Click a video, or press Enter on it, to open it in your default player.`;
+    statusMessage.textContent = `${count(result)}. Click a video, or press Enter on it, to open it in your default player.`;
   else if (restoring && !listable.has(status)) {
     statusMessage.textContent = `Your last selected folder is not available. ${messages[status]}`;
     // Offers the folder chooser; Enter or Space opens it.
     choose.focus();
   } else statusMessage.textContent = messages[status];
-  const fragment = document.createDocumentFragment();
-  for (const entry of result.entries) {
-    const card = document.createElement("button");
-    card.className = "video";
-    card.dataset.id = entry.id;
-    card.tabIndex = -1;
-    card.setAttribute("aria-label", `Open ${entry.filename}`);
-    const frame = document.createElement("div");
-    frame.className = "frame";
-    frame.append(placeholder("Loading thumbnail…"));
-    // Hover or focus lays the full filename and detail over the card below.
-    const text = document.createElement("span");
-    text.className = "text";
-    const body = document.createElement("span");
-    body.className = "body";
-    text.append(body);
-    const filename = document.createElement("span");
-    filename.className = "filename";
-    filename.textContent = entry.filename;
-    filename.title = entry.filename;
-    const detail = document.createElement("span");
-    detail.className = "detail";
-    body.append(filename, detail);
-    // The spoken counterpart of the frame and detail line.
-    const description = document.createElement("span");
-    description.className = "visually-hidden";
-    description.id = `description-${entry.id}`;
-    description.textContent = "Loading thumbnail…";
-    card.setAttribute("aria-describedby", description.id);
-    card.append(frame, text, description);
-    card.addEventListener("click", () => {
-      void window.browser.launch(entry.id).then((error) => {
-        statusMessage.textContent = error
-          ? `Cannot open ${entry.filename}: ${error}`
-          : `Opened ${entry.filename} in your default player.`;
-      });
-    });
-    cards.set(entry.id, card);
-    order.push(card);
-    const item = document.createElement("li");
-    item.append(card);
-    fragment.append(item);
+  showEntries(result.entries);
+}
+
+function count(result: FolderResult): string {
+  const total = result.entries.length;
+  return `${total} source ${total === 1 ? "video" : "videos"}`;
+}
+
+// Lists the selected folder again. Entries of unchanged source videos stay in
+// place with their thumbnails, and the browsing position is kept.
+async function refreshFolder(): Promise<void> {
+  const request = ++selection;
+  statusMessage.textContent = "Refreshing…";
+  const result = await window.browser.refresh();
+  if (request !== selection) return;
+  showEntries(result.entries);
+  if (result.status !== "videos") {
+    statusMessage.textContent = `Refreshed. ${messages[result.status]}`;
+    return;
   }
-  grid.append(fragment);
-  if (order[0]) makeCurrent(order[0]);
-  for (const card of cards.values()) observer.observe(card);
+  const changes = result.changes ?? { added: 0, removed: 0, changed: 0 };
+  const parts = (["added", "removed", "changed"] as const)
+    .filter((kind) => changes[kind])
+    .map((kind) => `${changes[kind]} ${kind}`);
+  statusMessage.textContent = parts.length
+    ? `Refreshed. ${count(result)}: ${parts.join(", ")}.`
+    : `Refreshed. ${count(result)}, no changes.`;
+}
+
+// Shows these entries in this order, keeping the cards and results of entries
+// already shown and discarding the rest.
+function showEntries(entries: readonly VideoEntry[]): void {
+  const listed = new Set(entries.map((entry) => entry.id));
+  for (const [id, card] of cards)
+    if (!listed.has(id)) {
+      observer.unobserve(card);
+      cards.delete(id);
+      near.delete(id);
+    }
+  // Results may arrive before their cards are built, but not for other entries.
+  for (const id of results.keys()) if (!listed.has(id)) results.delete(id);
+  order = entries.map((entry) => cards.get(entry.id) ?? createCard(entry));
+  grid.replaceChildren(...order.map((card) => card.parentElement ?? card));
+  const kept = current && cards.has(current.dataset.id ?? "");
+  if (!kept) current = undefined;
+  const first = current ?? order[0];
+  if (first) makeCurrent(first);
+  if (cards.size) prioritizeNear();
+}
+
+function createCard(entry: VideoEntry): HTMLButtonElement {
+  const card = document.createElement("button");
+  card.className = "video";
+  card.dataset.id = entry.id;
+  card.tabIndex = -1;
+  card.setAttribute("aria-label", `Open ${entry.filename}`);
+  const frame = document.createElement("div");
+  frame.className = "frame";
+  frame.append(placeholder("Loading thumbnail…"));
+  // Hover or focus lays the full filename and detail over the card below.
+  const text = document.createElement("span");
+  text.className = "text";
+  const body = document.createElement("span");
+  body.className = "body";
+  text.append(body);
+  const filename = document.createElement("span");
+  filename.className = "filename";
+  filename.textContent = entry.filename;
+  filename.title = entry.filename;
+  const detail = document.createElement("span");
+  detail.className = "detail";
+  body.append(filename, detail);
+  // The spoken counterpart of the frame and detail line.
+  const description = document.createElement("span");
+  description.className = "visually-hidden";
+  description.id = `description-${entry.id}`;
+  description.textContent = "Loading thumbnail…";
+  card.setAttribute("aria-describedby", description.id);
+  card.append(frame, text, description);
+  card.addEventListener("click", () => {
+    void window.browser.launch(entry.id).then((error) => {
+      statusMessage.textContent = error
+        ? `Cannot open ${entry.filename}: ${error}`
+        : `Opened ${entry.filename} in your default player.`;
+    });
+  });
+  cards.set(entry.id, card);
+  const item = document.createElement("li");
+  item.append(card);
+  observer.observe(card);
+  return card;
 }
 
 // Shows an entry's thumbnail or reason, and its duration, if it is near the viewport.
@@ -350,6 +394,9 @@ for (const control of [sortField, sortDirection])
 element<HTMLFormElement>("folder-form").addEventListener("submit", (event) => {
   event.preventDefault();
   void selectFolder(folderInput.value);
+});
+refreshButton.addEventListener("click", () => {
+  void refreshFolder();
 });
 choose.addEventListener("click", () => {
   void window.browser.chooseFolder().then((folder) => {

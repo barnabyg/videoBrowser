@@ -35,6 +35,14 @@ export function bundledTools(folder: string): Tools {
   };
 }
 
+/**
+ * Describes how a thumbnail is generated. Change it whenever the positions,
+ * dark-frame rule, scaling or image format change, so stored thumbnails made
+ * the old way are not reused.
+ */
+export const recipe =
+  "png 640 max; 10%, 50%, first or first, 1 s, 5 s; dark < 12/255";
+
 /** One elapsed budget for probing and every fallback attempt of a job. */
 export const budgetMs = 30_000;
 

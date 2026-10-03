@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from "electron";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { checkAssociation } from "./association";
+import { openCache, type ThumbnailCache } from "./cache";
 import { listFolder, videoExtensions } from "./folder";
 import {
   openPreferences,
@@ -10,26 +11,26 @@ import {
   validSort,
   type PreferenceStore,
 } from "./preferences";
+import { reconcile, type KnownEntry } from "./reconcile";
 import { sortEntries } from "./sort";
 import { startQueue, type ThumbnailQueue } from "./queue";
 import {
   bundledTools,
   extractPreview,
   processesStopped,
+  recipe,
   type Tools,
 } from "./thumbnail";
-import type {
-  FolderResult,
-  FolderStatus,
-  VideoEntry,
-  ThumbnailResult,
-} from "./contract";
+import type { FolderResult, FolderStatus, ThumbnailResult } from "./contract";
 
 let window: BrowserWindow;
 let work = new AbortController();
-let sources = new Map<string, string>();
-// The selected folder's entries with their modification times, for re-sorting.
-let listed: (VideoEntry & { modified: number })[] = [];
+// The folder last opened, which Refresh lists again.
+let selectedFolder: string | undefined;
+// The selected folder's entries by id, in the order they were first queued.
+let entries = new Map<string, KnownEntry>();
+// Entries whose result has been sent to the renderer.
+let settled = new Set<string>();
 let preferences: PreferenceStore;
 // Folders remembered for the next session: those that could be listed.
 const listable = new Set<FolderStatus>(["videos", "empty", "no-videos"]);
@@ -48,6 +49,11 @@ let tools: Tools = bundledTools(
     ? path.join(process.resourcesPath, "tools")
     : path.resolve(".tools/ffmpeg/bin"),
 );
+let generation = recipe;
+/** Test boundary: stands in for a release that generates thumbnails differently. */
+export function useFixtureRecipe(value: string): void {
+  generation = value;
+}
 /** Test boundary: substitutes a controlled probe process, e.g. one that stalls. */
 export function useFixtureProbe(command: string, args: string[]): void {
   tools = { ...tools, probe: { command, args } };
@@ -66,48 +72,77 @@ app.setPath(
 
 async function openFolder(folder: unknown): Promise<FolderResult> {
   work.abort();
-  work = new AbortController();
-  sources = new Map();
-  listed = [];
+  selectedFolder = undefined;
+  entries = new Map();
+  settled = new Set();
   stills = new Map();
   queue = undefined;
   priorities = [];
-  const signal = work.signal;
   if (typeof folder !== "string")
     return { folder: "", status: "invalid-path", entries: [] };
+  selectedFolder = folder;
+  return list(folder, []);
+}
+
+// Lists the selected folder again, keeping the entries of unchanged source videos.
+function refresh(): Promise<FolderResult> {
+  if (selectedFolder === undefined)
+    return Promise.resolve({ folder: "", status: "invalid-path", entries: [] });
+  return list(selectedFolder, [...entries.values()], true);
+}
+
+// Lists `folder`, matching it to the `known` entries, and queues extraction for
+// entries without a result. Earlier work is stopped first, so no result of an
+// earlier listing reaches the new one.
+async function list(
+  folder: string,
+  known: KnownEntry[],
+  refreshing = false,
+): Promise<FolderResult> {
+  work.abort();
+  work = new AbortController();
+  queue = undefined;
+  const signal = work.signal;
   const listing = await listFolder(folder);
   if (signal.aborted) return { folder, status: listing.status, entries: [] };
   if (listable.has(listing.status)) preferences.update({ folder });
   // Sources are queued for extraction in the order they are shown.
-  listed = sortEntries(listing.entries, preferences.current().sort).map(
-    (video) => {
-      const id = randomUUID();
-      sources.set(id, video.source);
-      return { id, filename: video.filename, modified: video.modified };
-    },
+  const { entries: listed, changes } = reconcile(
+    known,
+    sortEntries(listing.entries, preferences.current().sort),
+    randomUUID,
   );
-  const entries: VideoEntry[] = listed.map(({ id, filename }) => ({
-    id,
-    filename,
-  }));
-  const cache = path.join(app.getPath("userData"), "thumbnails");
+  entries = new Map(
+    listed.map((entry) => [entry.id, { ...entry, failed: false }]),
+  );
+  for (const id of settled) if (!entries.has(id)) settled.delete(id);
+  for (const id of stills.keys()) if (!entries.has(id)) stills.delete(id);
+  const pending = new Map(
+    listed
+      .filter((entry) => !settled.has(entry.id))
+      .map((entry) => [entry.id, entry.source]),
+  );
+  const cache = openCache(
+    path.join(app.getPath("userData"), "thumbnails"),
+    generation,
+  );
   // Start after the IPC response, allowing the renderer to display filenames first.
-  // Storage only enables display and later reuse; a failed mkdir still extracts.
   setTimeout(() => {
-    void mkdir(cache, { recursive: true })
-      .catch(() => undefined)
-      .then(() => {
-        if (signal.aborted) return;
-        queue = startQueue(
-          sources,
-          (id, source) => processThumbnail(id, source, cache, signal),
-          concurrency,
-          signal,
-        );
-        queue.prioritize(priorities);
-      });
+    if (signal.aborted) return;
+    queue = startQueue(
+      pending,
+      (id) => processThumbnail(id, cache, signal),
+      concurrency,
+      signal,
+    );
+    queue.prioritize(priorities);
   }, 0);
-  return { folder, status: listing.status, entries };
+  return {
+    folder,
+    status: listing.status,
+    entries: listed.map(({ id, filename }) => ({ id, filename })),
+    ...(refreshing ? { changes } : {}),
+  };
 }
 
 // Resolves with a user-facing reason the source cannot be opened, or "" once
@@ -129,35 +164,77 @@ async function launch(source: string): Promise<string> {
   return error ? `Windows could not open this video: ${error}` : "";
 }
 
+const changedReason =
+  "Thumbnail unavailable: this video changed while its thumbnail was being made. Choose Refresh to update it. You can still open it in your default player.";
+
+// Whether the entry's source video still has the size and modification time it
+// was listed with. Undefined when it cannot be examined now or was not then.
+async function unchanged(entry: KnownEntry): Promise<boolean | undefined> {
+  const current = await stat(entry.source).catch(() => undefined);
+  if (!current || !entry.modified) return undefined;
+  return current.size === entry.size && current.mtimeMs === entry.modified;
+}
+
+// Shows the entry's stored thumbnail, or generates and stores one. The entry
+// is its source video's identity as listed.
 async function processThumbnail(
   id: string,
-  source: string,
-  cache: string,
+  cache: ThumbnailCache,
   signal: AbortSignal,
 ): Promise<void> {
-  const preview = await extractPreview(source, tools, signal);
+  const entry = entries.get(id);
+  if (!entry) return;
+  const deliver = (result: ThumbnailResult) => {
+    // The folder may have changed or been refreshed meanwhile.
+    if (signal.aborted || window.isDestroyed()) return;
+    settled.add(id);
+    if (!result.image) entry.failed = true;
+    window.webContents.send("thumbnail", result);
+  };
+  // A source video changed since it was listed, or during the job, may give a
+  // still of another version, so none is shown or stored for this entry.
+  if ((await unchanged(entry)) === false)
+    return deliver({ id, reason: changedReason });
+  const stored = await cache.lookup(entry).catch(() => undefined);
+  if (stored) {
+    if (signal.aborted) return;
+    stills.set(id, stored.still);
+    return deliver({
+      id,
+      image: `thumbnail://${id}`,
+      duration: stored.duration,
+      reason: stored.reason,
+    });
+  }
+  const preview = await extractPreview(entry.source, tools, signal);
   if (signal.aborted || window.isDestroyed()) return;
+  const identified = await unchanged(entry);
+  if (identified === false) return deliver({ id, reason: changedReason });
   const result: ThumbnailResult = {
     id,
     duration: preview.duration,
     reason: preview.reason,
   };
-  if (preview.image) {
-    // The renderer loads stored stills only while their entries are near the
-    // viewport, so the folder's images are not all held in memory.
-    const still = path.join(cache, `${id}.png`);
+  if (preview.image && identified)
     try {
-      await writeFile(still, preview.image);
+      const still = await cache.store(entry, {
+        image: preview.image,
+        duration: preview.duration,
+        reason: preview.reason,
+      });
       if (signal.aborted) return;
+      // The renderer loads stored stills only while their entries are near the
+      // viewport, so the folder's images are not all held in memory.
       stills.set(id, still);
       result.image = `thumbnail://${id}`;
     } catch {
-      result.image = `data:image/png;base64,${preview.image.toString("base64")}`;
+      // Shown inline below.
     }
-  }
-  // The folder may have changed while the still was being stored.
-  if (signal.aborted || window.isDestroyed()) return;
-  window.webContents.send("thumbnail", result);
+  // A still that cannot be stored, or whose source video cannot be identified
+  // for reuse, is shown inline instead.
+  if (preview.image && !result.image)
+    result.image = `data:image/png;base64,${preview.image.toString("base64")}`;
+  deliver(result);
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -222,7 +299,7 @@ void app.whenReady().then(async () => {
     validateSender(event);
     if (!validSort(order)) throw new Error("Invalid sort order");
     preferences.update({ sort: order });
-    return sortEntries(listed, order).map((entry) => entry.id);
+    return sortEntries([...entries.values()], order).map((entry) => entry.id);
   });
   ipcMain.on("set-size", (event, width: unknown) => {
     if (trusted(event) && validSize(width)) preferences.update({ size: width });
@@ -239,6 +316,10 @@ void app.whenReady().then(async () => {
     validateSender(event);
     return openFolder(folder);
   });
+  ipcMain.handle("refresh", (event) => {
+    validateSender(event);
+    return refresh();
+  });
   // Entries near the viewport, nearest first; ignored unless well-formed.
   ipcMain.on("prioritize", (event, ids: unknown) => {
     if (
@@ -252,7 +333,7 @@ void app.whenReady().then(async () => {
   });
   ipcMain.handle("launch", (event, id: unknown) => {
     validateSender(event);
-    const source = typeof id === "string" ? sources.get(id) : undefined;
+    const source = typeof id === "string" ? entries.get(id)?.source : undefined;
     return source
       ? launch(source)
       : "This entry is no longer in the selected folder.";
