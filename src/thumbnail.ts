@@ -1,9 +1,14 @@
 // Extracts one automatic thumbnail and a reliable duration for a source video
 // within a bounded elapsed budget, explaining any failure for its entry.
-import { spawn } from "node:child_process";
 import { open } from "node:fs/promises";
 import path from "node:path";
+import { Worker } from "node:worker_threads";
 import { nativeImage } from "electron";
+import type {
+  ProcessExit,
+  ProcessMessage,
+  ProcessRequest,
+} from "./process-worker";
 
 export interface Preview {
   image?: Buffer;
@@ -45,35 +50,85 @@ const reasons = {
   cancelled: "Folder changed.",
 };
 
+interface Job {
+  settle(exit: ProcessExit): void;
+  started(pid: number): void;
+}
+const jobs = new Map<number, Job>();
+let nextJob = 0;
+let launcher: Worker | undefined;
+
+// Tool processes start on a worker thread; see process-worker.ts.
+function processLauncher(): Worker {
+  if (launcher) return launcher;
+  const worker = new Worker(path.join(__dirname, "process-worker.js"));
+  // Pending jobs never keep the application running.
+  worker.unref();
+  worker.on("message", (message: ProcessMessage) => {
+    const job = jobs.get(message.id);
+    if (!job) return;
+    if ("pid" in message) job.started(message.pid);
+    else {
+      jobs.delete(message.id);
+      job.settle(message);
+    }
+  });
+  worker.on("error", (error: Error) => {
+    launcher = undefined;
+    for (const [id, job] of jobs) {
+      jobs.delete(id);
+      job.settle({
+        id,
+        exit: null,
+        stdout: new Uint8Array(),
+        error: error.message,
+      });
+    }
+  });
+  launcher = worker;
+  return worker;
+}
+
+function stop(pid: number): void {
+  try {
+    process.kill(pid);
+  } catch {
+    /* It has already exited. */
+  }
+}
+
 async function run(
   tool: Tool,
   args: string[],
   signal: AbortSignal,
 ): Promise<Buffer> {
+  signal.throwIfAborted();
   return new Promise((resolve, reject) => {
-    // Aborting the signal terminates the process.
-    const child = spawn(tool.command, [...tool.args, ...args], {
-      windowsHide: true,
-      signal,
-      stdio: ["ignore", "pipe", "pipe"],
+    const id = nextJob++;
+    let pid: number | undefined;
+    // Aborting the signal terminates the process from this thread at once, so
+    // closing the window does not leave it running.
+    const abort = () => {
+      if (pid !== undefined) stop(pid);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    jobs.set(id, {
+      started(started) {
+        pid = started;
+        if (signal.aborted) stop(started);
+      },
+      settle({ exit, stdout, error }) {
+        signal.removeEventListener("abort", abort);
+        if (exit === 0) resolve(Buffer.from(stdout));
+        else reject(new Error(error || "Thumbnail process failed"));
+      },
     });
-    const chunks: Buffer[] = [];
-    let size = 0;
-    let error = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > 8 * 1024 * 1024) child.kill();
-      else chunks.push(chunk);
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      error = (error + chunk.toString()).slice(-2000);
-    });
-    child.on("error", reject);
-    child.on("close", (code) =>
-      code === 0
-        ? resolve(Buffer.concat(chunks))
-        : reject(new Error(error || "Thumbnail process failed")),
-    );
+    const request: ProcessRequest = {
+      id,
+      command: tool.command,
+      args: [...tool.args, ...args],
+    };
+    processLauncher().postMessage(request);
   });
 }
 
