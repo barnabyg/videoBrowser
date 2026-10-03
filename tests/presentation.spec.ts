@@ -1,4 +1,10 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import {
+  test,
+  expect,
+  type ElectronApplication,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import {
   mkdir,
   mkdtemp,
@@ -20,6 +26,16 @@ import { createPlayer } from "./player";
 
 function sizeControl(page: Page) {
   return page.getByRole("slider", { name: "Thumbnail size" });
+}
+
+// Sets the size of the window's page area. The window is at least 640 pixels
+// wide, as set in src/main.ts.
+function resizeWindow(app: ElectronApplication, width: number, height: number) {
+  return app.evaluate(
+    ({ BrowserWindow }, [width, height]) =>
+      BrowserWindow.getAllWindows()[0]?.setContentSize(width, height),
+    [width, height] as const,
+  );
 }
 
 async function box(locator: Locator) {
@@ -264,7 +280,8 @@ test("long filenames stay visible and can be read in full by mouse, keyboard and
     expect(await clipped(name)).toBe(true);
 
     // Keyboard focus also reveals the whole name, scrolling it into view: at
-    // 640 pixels the name starts below the visible grid.
+    // 640 pixels in a short window the name starts below the visible grid.
+    await resizeWindow(app, 1120, 560);
     await sizeControl(page).fill("640");
     expect(await inView(name)).toBe(false);
     // The grid follows the order control.
@@ -274,6 +291,78 @@ test("long filenames stay visible and can be read in full by mouse, keyboard and
     expect(await clipped(name)).toBe(false);
     await expect.poll(() => inView(name)).toBe(true);
     await expect(card).toHaveAccessibleName(`Open ${long}`);
+  } finally {
+    await app.close();
+  }
+});
+
+test("the header stays compact so the grid gets most of the window, and wraps without overflowing when narrow", async () => {
+  const root = await mkdtemp(path.resolve(".verify/presentation-header-"));
+  const folder = path.join(root, "Videos");
+  const long = path.join(root, `holiday videos ${"from the coast ".repeat(4)}`);
+  for (const each of [folder, long]) {
+    await mkdir(each);
+    await writeFile(path.join(each, "clip.mp4"), "x");
+  }
+  const { app, page } = await launchApp(root);
+  try {
+    const controls = [
+      page.getByLabel("Folder path"),
+      ...["Open folder", "Choose folder…", "Refresh", "Clear cache"].map(
+        (name) => page.getByRole("button", { name, exact: true }),
+      ),
+      sizeControl(page),
+      page.getByRole("combobox", { name: "Sort by" }),
+      page.getByRole("combobox", { name: "Order" }),
+      page.getByLabel("Selected folder"),
+      page.getByRole("status"),
+    ];
+    const header = page.locator("header");
+    const viewportWidth = () =>
+      page.evaluate(() => document.documentElement.clientWidth);
+    // Every control is shown, inside the header and the window.
+    const expectAllShown = async () => {
+      const bounds = await box(header);
+      const right = await viewportWidth();
+      for (const control of controls) {
+        await expect(control).toBeVisible();
+        const own = await box(control);
+        expect(own.y).toBeGreaterThanOrEqual(bounds.y - 1);
+        expect(own.y + own.height).toBeLessThanOrEqual(
+          bounds.y + bounds.height + 1,
+        );
+        expect(own.x + own.width).toBeLessThanOrEqual(right + 1);
+      }
+      expect(
+        await page.evaluate(
+          () =>
+            document.documentElement.scrollWidth <=
+            document.documentElement.clientWidth,
+        ),
+      ).toBe(true);
+    };
+
+    // In a typical desktop window, sized to fit a 1024 by 768 screen, the
+    // header leaves at least three quarters of the height to the grid.
+    await resizeWindow(app, 1024, 640);
+    await expect.poll(viewportWidth).toBeLessThanOrEqual(1024);
+    await openFolder(page, folder);
+    await expect(page.getByRole("status")).toContainText("1 source video");
+    await expectAllShown();
+    const height = await page.evaluate(() => window.innerHeight);
+    expect(height).toBeGreaterThanOrEqual(600);
+    expect((await box(header)).height).toBeLessThanOrEqual(height / 4);
+    await expect(
+      page.getByRole("heading", { name: "Video Browser" }),
+    ).toBeAttached();
+
+    // The narrowest window wraps the controls and a long selected folder
+    // instead of overflowing.
+    await resizeWindow(app, 640, 640);
+    await openFolder(page, long);
+    await expect(page.getByLabel("Selected folder")).toHaveText(long);
+    await expect.poll(viewportWidth).toBeLessThanOrEqual(640);
+    await expectAllShown();
   } finally {
     await app.close();
   }

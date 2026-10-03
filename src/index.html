@@ -12,46 +12,53 @@
   </head>
   <body>
     <header>
-      <h1>Video Browser</h1>
-      <p>Choose a folder to recognise and open your videos.</p>
-      <form id="folder-form">
-        <label for="folder">Folder path</label>
-        <div class="folder-controls">
-          <input id="folder" type="text" placeholder="C:\Videos" required />
-          <button type="submit">Open folder</button>
-          <button id="choose" type="button">Choose folder…</button>
-          <button id="refresh" type="button" disabled>Refresh</button>
-          <button id="clear-cache" type="button">Clear cache</button>
+      <h1 class="visually-hidden">Video Browser</h1>
+      <div class="toolbar">
+        <form id="folder-form">
+          <label for="folder" class="visually-hidden">Folder path</label>
+          <div class="folder-controls">
+            <input id="folder" type="text" placeholder="C:\Videos" required />
+            <button type="submit">Open folder</button>
+            <button id="choose" type="button">Choose folder…</button>
+            <button id="refresh" type="button" disabled>Refresh</button>
+            <button id="clear-cache" type="button">Clear cache</button>
+          </div>
+        </form>
+        <div class="view-controls">
+          <label for="size">Thumbnail size</label>
+          <input
+            id="size"
+            type="range"
+            min="160"
+            max="640"
+            step="40"
+            value="320"
+            aria-valuetext="320 pixels wide"
+          />
+          <span id="size-value" aria-hidden="true">320 px</span>
+          <label for="sort-field">Sort by</label>
+          <select id="sort-field">
+            <option value="name">Filename</option>
+            <option value="modified">Date modified</option>
+          </select>
+          <label for="sort-direction">Order</label>
+          <select id="sort-direction">
+            <option value="ascending">A to Z</option>
+            <option value="descending">Z to A</option>
+          </select>
         </div>
-      </form>
-      <p class="selected">
-        <span id="selected-label">Selected folder:</span>
-        <span id="selected" role="note" aria-labelledby="selected-label"></span>
-      </p>
-      <div class="view-controls">
-        <label for="size">Thumbnail size</label>
-        <input
-          id="size"
-          type="range"
-          min="160"
-          max="640"
-          step="40"
-          value="320"
-          aria-valuetext="320 pixels wide"
-        />
-        <span id="size-value" aria-hidden="true">320 px</span>
-        <label for="sort-field">Sort by</label>
-        <select id="sort-field">
-          <option value="name">Filename</option>
-          <option value="modified">Date modified</option>
-        </select>
-        <label for="sort-direction">Order</label>
-        <select id="sort-direction">
-          <option value="ascending">A to Z</option>
-          <option value="descending">Z to A</option>
-        </select>
       </div>
-      <p id="status" role="status">Select a folder to begin.</p>
+      <div class="info">
+        <p>
+          <span id="selected-label">Selected folder:</span>
+          <span
+            id="selected"
+            role="note"
+            aria-labelledby="selected-label"
+          ></span>
+        </p>
+        <p id="status" role="status">Select a folder to begin.</p>
+      </div>
     </header>
     <main id="browse">
       <ul id="grid" aria-label="Source videos"></ul>
