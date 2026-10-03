@@ -34,7 +34,7 @@ async function openFolder(folder: unknown): Promise<FolderResult> {
   if (typeof folder !== "string")
     return { folder: "", status: "invalid-path", entries: [] };
   const listing = await listFolder(folder);
-  if (signal.aborted) return { folder, status: listing.kind, entries: [] };
+  if (signal.aborted) return { folder, status: listing.status, entries: [] };
   const entries: VideoEntry[] = listing.entries.map((video) => {
     const id = randomUUID();
     sources.set(id, video.source);
@@ -45,7 +45,7 @@ async function openFolder(folder: unknown): Promise<FolderResult> {
   setTimeout(() => {
     void processThumbnails(pending, signal);
   }, 0);
-  return { folder, status: listing.kind, entries };
+  return { folder, status: listing.status, entries };
 }
 
 // Resolves with a user-facing reason the source cannot be opened, or "" once
@@ -75,31 +75,24 @@ async function processThumbnails(
     ? path.join(process.resourcesPath, "tools")
     : path.resolve(".tools/ffmpeg/bin");
   const cache = path.join(app.getPath("userData"), "thumbnails");
-  try {
-    await mkdir(cache, { recursive: true });
-    for (const [id, source] of pending) {
-      if (signal.aborted) break;
-      const preview = await extractPreview(source, tools, signal);
-      if (signal.aborted || window.isDestroyed()) break;
-      const result: ThumbnailResult = {
-        id,
-        duration: preview.duration,
-        reason: preview.reason,
-      };
-      if (preview.image) {
-        await writeFile(path.join(cache, `${id}.png`), preview.image);
-        result.image = `data:image/png;base64,${preview.image.toString("base64")}`;
-      }
-      window.webContents.send("thumbnail", result);
+  // Storage only enables later reuse; a failed write still shows the thumbnail.
+  await mkdir(cache, { recursive: true }).catch(() => undefined);
+  for (const [id, source] of pending) {
+    if (signal.aborted) break;
+    const preview = await extractPreview(source, tools, signal);
+    if (signal.aborted || window.isDestroyed()) break;
+    const result: ThumbnailResult = {
+      id,
+      duration: preview.duration,
+      reason: preview.reason,
+    };
+    if (preview.image) {
+      await writeFile(path.join(cache, `${id}.png`), preview.image).catch(
+        () => undefined,
+      );
+      result.image = `data:image/png;base64,${preview.image.toString("base64")}`;
     }
-  } catch {
-    if (!signal.aborted && !window.isDestroyed())
-      for (const id of pending.keys())
-        window.webContents.send("thumbnail", {
-          id,
-          reason:
-            "Thumbnail storage is unavailable. You can still open this video.",
-        });
+    window.webContents.send("thumbnail", result);
   }
 }
 

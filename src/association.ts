@@ -29,10 +29,18 @@ function query(args: string[]): Promise<string | undefined> {
   });
 }
 
+// Parses a reg.exe string value line into its name and data.
+function valueLine(line: string): [string, string] | undefined {
+  const match = /^\s{4}(.+?)\s{4}REG_(?:SZ|EXPAND_SZ)\s{4}(.*)$/.exec(line);
+  return match?.[1] && match[2] !== undefined
+    ? [match[1], match[2]]
+    : undefined;
+}
+
 function value(output: string | undefined, name: string): string | undefined {
   for (const line of output?.split(/\r?\n/) ?? []) {
-    const match = /^\s{4}(.+?)\s{4}REG_(?:SZ|EXPAND_SZ)\s{4}(.*)$/.exec(line);
-    if (match?.[1] === name && match[2]) return match[2];
+    const parsed = valueLine(line);
+    if (parsed?.[0] === name && parsed[1]) return parsed[1];
   }
   return undefined;
 }
@@ -81,9 +89,8 @@ async function usable(id: string): Promise<boolean> {
       if (/^\\shell\\[^\\]+\\command$/.test(key)) commands.set(key, new Map());
       continue;
     }
-    const match = /^\s{4}(.+?)\s{4}REG_(?:SZ|EXPAND_SZ)\s{4}(.*)$/.exec(line);
-    if (match?.[1] && match[2] !== undefined)
-      commands.get(key)?.set(match[1], match[2]);
+    const parsed = valueLine(line);
+    if (parsed) commands.get(key)?.set(...parsed);
   }
   for (const values of commands.values()) {
     if (values.has("DelegateExecute")) return true;

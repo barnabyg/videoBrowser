@@ -27,7 +27,7 @@ export interface ListedVideo {
 }
 
 export interface FolderListing {
-  kind: FolderStatus;
+  status: FolderStatus;
   entries: ListedVideo[];
 }
 
@@ -37,7 +37,7 @@ function isNetworkPath(folder: string): boolean {
   return /^[\\/]{2}/.test(folder) && !/^[\\/]{2}[?.][\\/][a-z]:/i.test(folder);
 }
 
-const failures: Record<string, FolderListing["kind"]> = {
+const failures: Record<string, FolderStatus> = {
   ENOENT: "not-found",
   ENOTDIR: "not-a-folder",
   EACCES: "access-denied",
@@ -45,16 +45,16 @@ const failures: Record<string, FolderListing["kind"]> = {
 };
 
 export async function listFolder(folder: string): Promise<FolderListing> {
-  if (!path.isAbsolute(folder)) return { kind: "invalid-path", entries: [] };
-  if (isNetworkPath(folder)) return { kind: "network", entries: [] };
+  if (!path.isAbsolute(folder)) return { status: "invalid-path", entries: [] };
+  if (isNetworkPath(folder)) return { status: "network", entries: [] };
   let files;
   try {
     files = await readdir(folder, { withFileTypes: true });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code ?? "";
-    return { kind: failures[code] ?? "unreadable", entries: [] };
+    return { status: failures[code] ?? "unreadable", entries: [] };
   }
-  if (!files.length) return { kind: "empty", entries: [] };
+  if (!files.length) return { status: "empty", entries: [] };
   const entries = files
     .filter(
       (file) =>
@@ -65,5 +65,5 @@ export async function listFolder(folder: string): Promise<FolderListing> {
       filename: file.name,
       source: path.join(folder, file.name),
     }));
-  return { kind: entries.length ? "videos" : "no-videos", entries };
+  return { status: entries.length ? "videos" : "no-videos", entries };
 }

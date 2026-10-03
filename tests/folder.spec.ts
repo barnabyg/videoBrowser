@@ -24,7 +24,7 @@ test("lists only recognised video files directly in the selected folder", async 
     ["nested", "folder.mp4"],
   );
   const listing = await listFolder(root);
-  expect(listing.kind).toBe("videos");
+  expect(listing.status).toBe("videos");
   expect(listing.entries.map((entry) => entry.filename).sort()).toEqual([
     "a café.mkv",
     "b clip.MP4",
@@ -37,12 +37,12 @@ test("lists only recognised video files directly in the selected folder", async 
 
 test("distinguishes an empty folder from one without recognised videos", async () => {
   expect(await listFolder(await fixture([]))).toMatchObject({
-    kind: "empty",
+    status: "empty",
     entries: [],
   });
   expect(
     await listFolder(await fixture(["notes.txt"], ["holiday.mp4"])),
-  ).toMatchObject({ kind: "no-videos", entries: [] });
+  ).toMatchObject({ status: "no-videos", entries: [] });
 });
 
 test("reports why a selected folder cannot be listed", async () => {
@@ -52,21 +52,21 @@ test("reports why a selected folder cannot be listed", async () => {
   execFileSync("icacls.exe", [locked, "/deny", `${user}:(RD)`]);
   try {
     expect(await listFolder(locked)).toMatchObject({
-      kind: "access-denied",
+      status: "access-denied",
       entries: [],
     });
   } finally {
     execFileSync("icacls.exe", [locked, "/remove:d", user]);
   }
   expect(await listFolder(path.join(root, "missing"))).toMatchObject({
-    kind: "not-found",
+    status: "not-found",
   });
   expect(await listFolder(path.join(root, "clip.mp4"))).toMatchObject({
-    kind: "not-a-folder",
+    status: "not-a-folder",
   });
   expect(await listFolder("relative\\videos")).toMatchObject({
-    kind: "invalid-path",
+    status: "invalid-path",
   });
   for (const share of ["\\\\server\\videos", "\\\\?\\UNC\\server\\videos"])
-    expect(await listFolder(share)).toMatchObject({ kind: "network" });
+    expect(await listFolder(share)).toMatchObject({ status: "network" });
 });

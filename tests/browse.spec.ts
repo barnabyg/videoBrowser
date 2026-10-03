@@ -168,6 +168,9 @@ test("a single click on a thumbnail, placeholder or filename launches the source
         // may scroll the entry into view, so measure after focus.
         await card(filler(20)).focus();
         const focused = await scrollTop();
+        // Focus alone must not launch: the handler still records the last click.
+        await page.waitForTimeout(500);
+        await expectLaunched(log, path.join(folder, filler(39)));
         await page.keyboard.press("Enter");
         await expectLaunched(log, path.join(folder, filler(20)));
         expect(await scrollTop()).toBe(focused);
@@ -244,5 +247,24 @@ test("missing sources and absent or broken default applications produce clear la
   } finally {
     player.remove();
     broken.remove();
+  }
+});
+
+test("thumbnails still appear when thumbnail storage cannot be written", async () => {
+  const root = await mkdtemp(path.resolve(".verify/browse-storage-"));
+  const folder = path.join(root, "sources");
+  await mkdir(folder);
+  makeVideo(path.join(folder, "clip.mp4"));
+  // A file where the cache folder belongs makes every cache write fail.
+  await mkdir(path.join(root, "state"));
+  await writeFile(path.join(root, "state", "thumbnails"), "not a folder");
+  const { app, page } = await launchApp(root);
+  try {
+    await openFolder(page, folder);
+    await expect(
+      page.getByRole("img", { name: "Thumbnail for clip.mp4" }),
+    ).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await app.close();
   }
 });
