@@ -1,4 +1,7 @@
+// Extracts one automatic thumbnail and a reliable duration for a source video
+// within a bounded elapsed budget, explaining any failure for its entry.
 import { spawn } from "node:child_process";
+import { open } from "node:fs/promises";
 import path from "node:path";
 import { nativeImage } from "electron";
 
@@ -8,13 +11,48 @@ export interface Preview {
   reason?: string;
 }
 
+/** An executable plus leading arguments; the media arguments follow. */
+export interface Tool {
+  command: string;
+  args: readonly string[];
+}
+/** The probe (duration and streams) and still-extraction tools. */
+export interface Tools {
+  probe: Tool;
+  extract: Tool;
+}
+
+/** The ffprobe and ffmpeg executables in `folder`. */
+export function bundledTools(folder: string): Tools {
+  return {
+    probe: { command: path.join(folder, "ffprobe.exe"), args: [] },
+    extract: { command: path.join(folder, "ffmpeg.exe"), args: [] },
+  };
+}
+
+/** One elapsed budget for probing and every fallback attempt of a job. */
+export const budgetMs = 30_000;
+
+const unavailable = "Thumbnail unavailable:";
+const stillOpen = "You can still open it in your default player.";
+const reasons = {
+  unreadable: `${unavailable} this file cannot be read. Check that you have permission and that its drive is connected. ${stillOpen}`,
+  noPicture: `${unavailable} this file has no video picture to show. ${stillOpen}`,
+  unrecognised: `${unavailable} this file is not recognised as a supported video and may be damaged. ${stillOpen}`,
+  undecodable: `${unavailable} the thumbnail engine could not decode a picture from this video. It may be damaged or use an unsupported format. ${stillOpen}`,
+  timeout: `${unavailable} processing took longer than ${budgetMs / 1000} seconds and was stopped. ${stillOpen}`,
+  dark: "Only dark frames were found.",
+  cancelled: "Folder changed.",
+};
+
 async function run(
-  executable: string,
+  tool: Tool,
   args: string[],
   signal: AbortSignal,
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, {
+    // Aborting the signal terminates the process.
+    const child = spawn(tool.command, [...tool.args, ...args], {
       windowsHide: true,
       signal,
       stdio: ["ignore", "pipe", "pipe"],
@@ -39,6 +77,91 @@ async function run(
   });
 }
 
+// A hung read, e.g. on a stalled removable drive, gives up when `signal` fires.
+async function readable(source: string, signal: AbortSignal): Promise<boolean> {
+  const check = async () => {
+    const file = await open(source, "r");
+    try {
+      await file.read(Buffer.alloc(1), 0, 1, 0);
+    } finally {
+      await file.close();
+    }
+  };
+  const aborted = new Promise<never>((_, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    signal.addEventListener("abort", () => reject(signal.reason), {
+      once: true,
+    });
+  });
+  try {
+    await Promise.race([check(), aborted]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+interface Probe {
+  duration?: number;
+  video: boolean;
+}
+
+// Resolves undefined when the source is not recognised as media.
+async function probe(
+  source: string,
+  tools: Tools,
+  signal: AbortSignal,
+): Promise<Probe | undefined> {
+  let metadata: unknown;
+  try {
+    const output = await run(
+      tools.probe,
+      [
+        "-v",
+        "error",
+        "-protocol_whitelist",
+        "file,pipe",
+        "-show_entries",
+        "format=duration:stream=codec_type",
+        "-of",
+        "json",
+        source,
+      ],
+      signal,
+    );
+    metadata = JSON.parse(output.toString());
+  } catch {
+    return undefined;
+  }
+  if (typeof metadata !== "object" || metadata === null) return undefined;
+  const streams =
+    "streams" in metadata && Array.isArray(metadata.streams)
+      ? (metadata.streams as unknown[])
+      : [];
+  if (!streams.length) return undefined;
+  const video = streams.some(
+    (stream) =>
+      typeof stream === "object" &&
+      stream !== null &&
+      "codec_type" in stream &&
+      stream.codec_type === "video",
+  );
+  let duration: number | undefined;
+  if ("format" in metadata) {
+    const format = metadata.format;
+    if (
+      typeof format === "object" &&
+      format !== null &&
+      "duration" in format &&
+      typeof format.duration === "string"
+    ) {
+      const value = Number(format.duration);
+      if (Number.isFinite(value) && value > 0) duration = value;
+    }
+  }
+  return { duration, video };
+}
+
 function isBlack(image: Buffer): boolean {
   const pixels = nativeImage
     .createFromBuffer(image)
@@ -52,50 +175,33 @@ function isBlack(image: Buffer): boolean {
   return brightness / (pixels.length / 4) < 12;
 }
 
+/**
+ * Probes a source video, then tries 10%, 50% and the first frame of a reliable
+ * duration, or the first frame, 1 s and 5 s without one, keeping the first
+ * non-dark still. The whole job shares one `budgetMs` elapsed budget; `cancelled`
+ * stops it early. Any running tool process is terminated when either fires.
+ */
 export async function extractPreview(
   source: string,
-  tools: string,
+  tools: Tools,
   cancelled: AbortSignal,
 ): Promise<Preview> {
-  const deadline = AbortSignal.timeout(30_000);
+  const deadline = AbortSignal.timeout(budgetMs);
   const signal = AbortSignal.any([deadline, cancelled]);
-  let duration: number | undefined;
-  try {
-    const output = await run(
-      path.join(tools, "ffprobe.exe"),
-      [
-        "-v",
-        "error",
-        "-protocol_whitelist",
-        "file,pipe",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "json",
-        source,
-      ],
-      signal,
-    );
-    const metadata: unknown = JSON.parse(output.toString());
-    if (
-      typeof metadata === "object" &&
-      metadata !== null &&
-      "format" in metadata
-    ) {
-      const format = metadata.format;
-      if (
-        typeof format === "object" &&
-        format !== null &&
-        "duration" in format &&
-        typeof format.duration === "string"
-      ) {
-        const value = Number(format.duration);
-        if (Number.isFinite(value) && value > 0) duration = value;
-      }
-    }
-  } catch {
-    /* A failed probe still permits bounded extraction while the budget remains. */
-  }
+  // Cancellation and the deadline explain a failure better than its symptoms.
+  const outcome = (preview: Preview): Preview => {
+    if (cancelled.aborted) return { reason: reasons.cancelled };
+    if (deadline.aborted)
+      return { duration: preview.duration, reason: reasons.timeout };
+    return preview;
+  };
+  if (!(await readable(source, signal)))
+    return outcome({ reason: reasons.unreadable });
+  // A failed probe still permits bounded extraction while the budget remains.
+  const media = await probe(source, tools, signal);
+  const duration = media?.duration;
+  if (media && !media.video)
+    return outcome({ duration, reason: reasons.noPicture });
   const positions = duration ? [duration * 0.1, duration * 0.5, 0] : [0, 1, 5];
   let lastImage: Buffer | undefined;
   for (const position of positions) {
@@ -103,7 +209,7 @@ export async function extractPreview(
     try {
       const seek = position === 0 ? [] : ["-ss", String(position)];
       const image = await run(
-        path.join(tools, "ffmpeg.exe"),
+        tools.extract,
         [
           "-hide_banner",
           "-loglevel",
@@ -131,23 +237,18 @@ export async function extractPreview(
         signal,
       );
       if (!image.length) continue;
+      const dark = isBlack(image);
       lastImage = image;
-      if (!isBlack(image)) return { image, duration };
+      if (!dark) return { image, duration };
     } catch {
       /* A later position can succeed on a damaged or non-seekable source. */
     }
   }
-  if (cancelled.aborted) return { reason: "Folder changed." };
-  if (deadline.aborted)
-    return { duration, reason: "Thumbnail processing exceeded 30 seconds." };
-  if (lastImage)
-    return {
-      image: lastImage,
-      duration,
-      reason: "Only dark frames were found.",
-    };
-  return {
+  // A dark still is better than none, even when the budget has run out.
+  if (lastImage && !cancelled.aborted)
+    return { image: lastImage, duration, reason: reasons.dark };
+  return outcome({
     duration,
-    reason: "Thumbnail unavailable. You can still open this video.",
-  };
+    reason: media ? reasons.undecodable : reasons.unrecognised,
+  });
 }
