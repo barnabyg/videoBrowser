@@ -1,4 +1,21 @@
 type ThumbnailResult = import("./contract").ThumbnailResult;
+type FolderStatus = import("./contract").FolderStatus;
+
+const messages: Record<Exclude<FolderStatus, "videos">, string> = {
+  empty: "This folder is empty. Choose another folder.",
+  "no-videos":
+    "No recognised video files in this folder. Subfolders are not included; choose the folder that directly contains your videos.",
+  "invalid-path": "Enter a full folder path, such as C:\\Videos.",
+  network:
+    "Network folders are not supported. Choose a folder on this computer or on a USB drive.",
+  "not-found":
+    "This folder cannot be found. If it is on a USB drive, check that the drive is connected, or choose another folder.",
+  "not-a-folder": "This path is a file, not a folder. Choose a folder.",
+  "access-denied":
+    "Windows denied access to this folder. Choose a folder you have permission to open.",
+  unreadable:
+    "Cannot read this folder. Check that it is connected and accessible, or choose another folder.",
+};
 
 function element<T extends HTMLElement>(id: string): T {
   const value = document.getElementById(id);
@@ -6,9 +23,10 @@ function element<T extends HTMLElement>(id: string): T {
   return value as T;
 }
 const folderInput = element<HTMLInputElement>("folder");
-const grid = element<HTMLDivElement>("grid");
+const grid = element<HTMLUListElement>("grid");
 const statusMessage = element<HTMLParagraphElement>("status");
-const selected = element<HTMLParagraphElement>("selected");
+const selected = element<HTMLSpanElement>("selected");
+const scroller = element<HTMLElement>("browse");
 const cards = new Map<string, HTMLButtonElement>();
 const earlyResults = new Map<string, ThumbnailResult>();
 let selection = 0;
@@ -18,15 +36,15 @@ async function selectFolder(folder: string): Promise<void> {
   cards.clear();
   earlyResults.clear();
   grid.replaceChildren();
+  scroller.scrollTop = 0;
   statusMessage.textContent = "Reading folder…";
   const result = await window.browser.openFolder(folder);
   if (current !== selection) return;
   selected.textContent = result.folder;
   statusMessage.textContent =
-    result.error ??
-    (result.entries.length
-      ? `${result.entries.length} source videos. Click a video to open it in your default player.`
-      : "No recognised video files in this folder.");
+    result.status === "videos"
+      ? `${result.entries.length} source ${result.entries.length === 1 ? "video" : "videos"}. Click a video to open it in your default player.`
+      : messages[result.status];
   const fragment = document.createDocumentFragment();
   for (const entry of result.entries) {
     const card = document.createElement("button");
@@ -41,6 +59,8 @@ async function selectFolder(folder: string): Promise<void> {
     name.title = entry.filename;
     const detail = document.createElement("span");
     detail.className = "detail";
+    detail.id = `detail-${entry.id}`;
+    card.setAttribute("aria-describedby", detail.id);
     card.append(frame, name, detail);
     card.addEventListener("click", () => {
       void window.browser.launch(entry.id).then((error) => {
@@ -50,7 +70,9 @@ async function selectFolder(folder: string): Promise<void> {
       });
     });
     cards.set(entry.id, card);
-    fragment.append(card);
+    const item = document.createElement("li");
+    item.append(card);
+    fragment.append(item);
   }
   grid.append(fragment);
   for (const result of earlyResults.values()) showThumbnail(result);
