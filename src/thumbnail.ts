@@ -75,14 +75,24 @@ async function run(
   });
 }
 
-async function readable(source: string): Promise<boolean> {
-  try {
+// A hung read, e.g. on a stalled removable drive, gives up when `signal` fires.
+async function readable(source: string, signal: AbortSignal): Promise<boolean> {
+  const check = async () => {
     const file = await open(source, "r");
     try {
       await file.read(Buffer.alloc(1), 0, 1, 0);
     } finally {
       await file.close();
     }
+  };
+  const aborted = new Promise<never>((_, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    signal.addEventListener("abort", () => reject(signal.reason), {
+      once: true,
+    });
+  });
+  try {
+    await Promise.race([check(), aborted]);
     return true;
   } catch {
     return false;
@@ -183,7 +193,8 @@ export async function extractPreview(
       return { duration: preview.duration, reason: reasons.timeout };
     return preview;
   };
-  if (!(await readable(source))) return outcome({ reason: reasons.unreadable });
+  if (!(await readable(source, signal)))
+    return outcome({ reason: reasons.unreadable });
   // A failed probe still permits bounded extraction while the budget remains.
   const media = await probe(source, tools, signal);
   const duration = media?.duration;
