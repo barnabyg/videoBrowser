@@ -97,6 +97,9 @@ test("every sort combination orders entries from the keyboard, with equivalent k
   try {
     await openFolder(page, folder);
     const image = page.getByRole("img", { name: "Thumbnail for video2.mp4" });
+    // Only entries near the viewport show results; a small screen may hold
+    // few entries.
+    await videoCard(page, "video2.mp4").scrollIntoViewIfNeeded();
     await expect(image).toBeVisible({ timeout: 30_000 });
     const byName = [
       "cafe.mp4",
@@ -169,6 +172,7 @@ test("every sort combination orders entries from the keyboard, with equivalent k
     await expect(videoCard(page, "cafe.mp4")).toBeFocused();
 
     // Sorting kept the thumbnail and changed no source.
+    await videoCard(page, "video2.mp4").scrollIntoViewIfNeeded();
     await expect(image).toBeVisible();
     expect(await snapshot(folder)).toEqual(before);
   } finally {
@@ -247,6 +251,7 @@ test("folder, size and sort order are restored after a restart, with thumbnails 
         ]);
       const frame = await videoCard(page, clip).locator(".frame").boundingBox();
       expect(Math.abs((frame?.width ?? 0) - 480)).toBeLessThanOrEqual(4);
+      await videoCard(page, clip).scrollIntoViewIfNeeded();
       await expect(
         page.getByRole("img", { name: `Thumbnail for ${clip}` }),
       ).toBeVisible({ timeout: 30_000 });
