@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { BrowserApi, ThumbnailResult } from "./contract";
 const api: BrowserApi = {
   preferences: () => ipcRenderer.invoke("preferences"),
+  storageProblem: () => ipcRenderer.invoke("storage-problem"),
   chooseFolder: () => ipcRenderer.invoke("choose-folder"),
   openFolder: (folder) => ipcRenderer.invoke("open-folder", folder),
   refresh: () => ipcRenderer.invoke("refresh"),

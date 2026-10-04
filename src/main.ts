@@ -13,6 +13,7 @@ import {
 } from "./preferences";
 import { reconcile, type KnownEntry } from "./reconcile";
 import { sortEntries } from "./sort";
+import { checkWritable, dataFolder } from "./storage";
 import { startQueue, type ThumbnailQueue } from "./queue";
 import {
   bundledTools,
@@ -76,17 +77,20 @@ export function useFixtureCacheLimit(bytes: number): void {
 export function useFixtureProbe(command: string, args: string[]): void {
   tools = { ...tools, probe: { command, args } };
 }
-const state = process.env.VIDEO_BROWSER_STATE;
-app.setPath(
-  "userData",
-  path.resolve(
-    state ??
-      path.join(
-        process.env.LOCALAPPDATA ?? app.getPath("appData"),
-        "video-browser",
-      ),
-  ),
-);
+// Everything the app and its runtime save stays in the data folder, set before
+// the runtime starts writing, so nothing goes to %LOCALAPPDATA% or %APPDATA%.
+const data = dataFolder({
+  override: process.env.VIDEO_BROWSER_STATE,
+  packaged: app.isPackaged,
+  executable: app.getPath("exe"),
+  appPath: app.getAppPath(),
+});
+app.setPath("userData", data);
+app.setPath("sessionData", path.join(data, "session"));
+app.setPath("crashDumps", path.join(data, "crashes"));
+app.setAppLogsPath(path.join(data, "logs"));
+// Checked once the app is ready; a reason shown while nothing can be saved.
+let storageProblem = "";
 
 async function openFolder(folder: unknown): Promise<FolderResult> {
   work.abort();
@@ -298,6 +302,9 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 void app.whenReady().then(async () => {
+  // Browsing still works; preferences and thumbnails are then kept in memory.
+  if (!(await checkWritable(data)))
+    storageProblem = `Preferences and stored thumbnails cannot be saved, because Windows does not allow changes to ${data}. Browsing still works, but thumbnails are made again each time. To keep them, move the Video Browser folder to a folder you can change, such as Documents.`;
   preferences = await openPreferences(
     path.join(app.getPath("userData"), "preferences.json"),
   );
@@ -347,6 +354,10 @@ void app.whenReady().then(async () => {
   ipcMain.handle("preferences", (event) => {
     validateSender(event);
     return preferences.current();
+  });
+  ipcMain.handle("storage-problem", (event) => {
+    validateSender(event);
+    return storageProblem;
   });
   ipcMain.handle("sort", (event, order: unknown) => {
     validateSender(event);

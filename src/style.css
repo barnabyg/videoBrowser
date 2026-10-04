@@ -111,6 +111,20 @@ select {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* Shown only while nothing can be saved; set apart from the routine status. */
+#storage-problem {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid #e0b252;
+  border-radius: 4px;
+  background: #fff6e0;
+  color: #5a3e00;
+  font-size: 0.875em;
+  overflow-wrap: anywhere;
+}
+#storage-problem[hidden] {
+  display: none;
+}
 #selected-label {
   font-weight: 600;
 }

@@ -48,6 +48,11 @@ export interface Preferences {
 export interface BrowserApi {
   /** The saved preferences, or the initial ones for a fresh user profile. */
   preferences(): Promise<Preferences>;
+  /**
+   * Why preferences and stored thumbnails cannot be saved in the data folder
+   * this session, as a user-facing message, or "" when they can.
+   */
+  storageProblem(): Promise<string>;
   chooseFolder(): Promise<string | undefined>;
   /** Lists the folder in the saved sort order, and remembers it once it can be listed. */
   openFolder(folder: string): Promise<FolderResult>;
