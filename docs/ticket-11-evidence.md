@@ -41,7 +41,7 @@ Measured on 3 October 2026: Windows 11 Home 10.0.26300, AMD Ryzen 5 7600 (12 log
 [`tests/package.spec.ts`](../tests/package.spec.ts) extracts the actual zip into `.verify` and starts its own `VideoBrowser.exe`:
 
 - **Contents:** the runtime, compiled application, both tools, the user guide and the licence files are present. `resources/app` holds nothing but `package.json` and compiled `.js`, `.html` and `.css` files. The user guide covers the target, Refresh, Clear cache, the storage folder and the extension list.
-- **Clean environment:** the app runs with `PATH` set to `%SystemRoot%\System32` and only the Windows variables it needs (`SystemRoot`, `windir`, `SystemDrive`, `USERPROFILE`, `APPDATA`, `TEMP`, `TMP`), and with `LOCALAPPDATA` pointing to a new, empty folder. No `VIDEO_BROWSER_STATE` override is set, so storage uses the normal location. Fixture videos are made with the package's own `ffmpeg.exe`.
+- **Clean environment:** the app runs with `PATH` set to `%SystemRoot%\System32` and only the Windows variables it needs (`SystemRoot`, `windir`, `SystemDrive`, `USERPROFILE`, `APPDATA`, `TEMP`, `TMP`), and with `LOCALAPPDATA` pointing to a new, empty folder. No `VIDEO_BROWSER_STATE` override is set, so storage uses the normal location: `%LOCALAPPDATA%\video-browser` at the time. Since issue #24 it is `data` beside `VideoBrowser.exe`, and `APPDATA` also points to a new, empty folder. Fixture videos are made with the package's own `ffmpeg.exe`.
 - **Workflow:** in one session, with a disposable file association for a controlled player, the test:
   1. opens a folder and shows real thumbnails;
   2. explains a damaged file and still launches it;
@@ -53,7 +53,7 @@ Measured on 3 October 2026: Windows 11 Home 10.0.26300, AMD Ryzen 5 7600 (12 log
 
   After a restart, the folder, size and sort order are restored. The stored stills are shown without being written again: their names, sizes and modification times are unchanged.
 
-- **Offline and storage:** every request from the window in both sessions used `file:`, `thumbnail:` or `data:` URLs. The main process makes no network requests of its own, and the thumbnail tools accept only the `file` and `pipe` protocols. Running with the network actually disconnected is part of the manual clean-machine check. `%LOCALAPPDATA%\video-browser` holds `preferences.json` and `thumbnails`. Every file in the package folder has the same size and modification time as before. The source folder holds only the source videos. Their bytes and modification times are the same after Refresh, Clear cache and the restart as after the last change the test made.
+- **Offline and storage:** every request from the window in both sessions used `file:`, `thumbnail:` or `data:` URLs. The main process makes no network requests of its own, and the thumbnail tools accept only the `file` and `pipe` protocols. Running with the network actually disconnected is part of the manual clean-machine check. `%LOCALAPPDATA%\video-browser` held `preferences.json` and `thumbnails`, and every file in the package folder had the same size and modification time as before. Since issue #24 the package's `data` folder holds them, every other package file is unchanged, and the per-user folders get no files. The source folder holds only the source videos. Their bytes and modification times are the same after Refresh, Clear cache and the restart as after the last change the test made.
 
 The earlier smoke test, which checks thumbnails, a non-ASCII filename, a launch and source bytes from the package, is kept.
 
