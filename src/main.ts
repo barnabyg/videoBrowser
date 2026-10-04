@@ -56,7 +56,7 @@ let cacheLimit = defaultLimit;
 let cache: ThumbnailCache | undefined;
 function thumbnailCache(): ThumbnailCache {
   cache ??= openCache(
-    path.join(app.getPath("userData"), "thumbnails"),
+    path.join(dataPath, "thumbnails"),
     generation,
     // The selected folder's stills stay while they can be shown.
     { limit: cacheLimit, inUse: () => stills.values() },
@@ -79,16 +79,16 @@ export function useFixtureProbe(command: string, args: string[]): void {
 }
 // Everything the app and its runtime save stays in the data folder, set before
 // the runtime starts writing, so nothing goes to %LOCALAPPDATA% or %APPDATA%.
-const data = dataFolder({
+const dataPath = dataFolder({
   override: process.env.VIDEO_BROWSER_STATE,
   packaged: app.isPackaged,
   executable: app.getPath("exe"),
   appPath: app.getAppPath(),
 });
-app.setPath("userData", data);
-app.setPath("sessionData", path.join(data, "session"));
-app.setPath("crashDumps", path.join(data, "crashes"));
-app.setAppLogsPath(path.join(data, "logs"));
+app.setPath("userData", dataPath);
+app.setPath("sessionData", path.join(dataPath, "session"));
+app.setPath("crashDumps", path.join(dataPath, "crashes"));
+app.setAppLogsPath(path.join(dataPath, "logs"));
 // Checked once the app is ready; a reason shown while nothing can be saved.
 let storageProblem = "";
 
@@ -303,11 +303,9 @@ protocol.registerSchemesAsPrivileged([
 
 void app.whenReady().then(async () => {
   // Browsing still works; preferences and thumbnails are then kept in memory.
-  if (!(await checkWritable(data)))
-    storageProblem = `Preferences and stored thumbnails cannot be saved, because Windows does not allow changes to ${data}. Browsing still works, but thumbnails are made again each time. To keep them, move the Video Browser folder to a folder you can change, such as Documents.`;
-  preferences = await openPreferences(
-    path.join(app.getPath("userData"), "preferences.json"),
-  );
+  if (!(await checkWritable(dataPath)))
+    storageProblem = `Preferences and stored thumbnails cannot be saved, because Windows does not allow changes to ${dataPath}. Browsing still works, but thumbnails are made again each time. To keep them, move the Video Browser folder to a folder you can change, such as Documents.`;
+  preferences = await openPreferences(path.join(dataPath, "preferences.json"));
   // Serves only stills of the selected folder's entries.
   protocol.handle("thumbnail", async (request) => {
     const still = stills.get(new URL(request.url).hostname);
