@@ -1,4 +1,4 @@
-// Keeps generated thumbnails in application-managed per-user storage, so an
+// Keeps generated thumbnails in the data folder (see storage.ts), so an
 // unchanged source video is not extracted again on a later visit or launch.
 // The storage is bounded: the least recently used thumbnails are evicted.
 import { createHash } from "node:crypto";

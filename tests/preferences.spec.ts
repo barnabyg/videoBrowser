@@ -216,7 +216,7 @@ test("folder, size and sort order are restored after a restart, with thumbnails 
       await first.app.close();
     }
 
-    // Preferences are saved in the per-user state, not beside the sources.
+    // Preferences are saved in the data folder, not beside the sources.
     expect(
       JSON.parse(
         await readFile(path.join(root, "state", "preferences.json"), "utf8"),

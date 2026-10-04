@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 import {
+  cp,
   mkdtemp,
   mkdir,
   readFile,
@@ -63,20 +64,54 @@ async function tree(folder: string) {
   return result.sort((a, b) => a.file.localeCompare(b.file));
 }
 
+// Per-user folders the app must leave alone: %LOCALAPPDATA% and %APPDATA%.
+interface Profile {
+  localAppData: string;
+  appData: string;
+}
+
+// Handing a video to its default player makes Windows' shell create this empty
+// folder of its own in a fresh %LOCALAPPDATA%; every real profile has it.
+const shellFolders = [
+  "Microsoft",
+  path.join("Microsoft", "Windows"),
+  path.join("Microsoft", "Windows", "Caches"),
+];
+
+// The app saved nothing in the per-user folders: no files, and no folders
+// except the shell's own.
+async function expectProfileUntouched(profile: Profile) {
+  for (const folder of [profile.localAppData, profile.appData]) {
+    const entries = await readdir(folder, {
+      recursive: true,
+      withFileTypes: true,
+    });
+    const written = entries.map((entry) =>
+      path.relative(folder, path.join(entry.parentPath, entry.name)),
+    );
+    expect(written.filter((entry) => !shellFolders.includes(entry))).toEqual(
+      [],
+    );
+    expect(entries.filter((entry) => !entry.isDirectory())).toEqual([]);
+  }
+}
+
 // Starts the extracted executable as a clean machine would: Windows' own
-// PATH, no developer environment, and a fresh per-user local folder.
-function launchPackage(packageRoot: string, localAppData: string) {
+// PATH, no developer environment and fresh per-user folders, from `cwd` as
+// a shortcut with another starting folder would.
+function launchPackage(packageRoot: string, profile: Profile, cwd: string) {
   const windows = process.env.SystemRoot ?? "C:\\Windows";
   return electron.launch({
     executablePath: path.join(packageRoot, "VideoBrowser.exe"),
+    cwd,
     env: {
       SystemRoot: windows,
       SystemDrive: process.env.SystemDrive ?? "C:",
       windir: windows,
       PATH: `${windows}\\System32`,
       USERPROFILE: process.env.USERPROFILE ?? "",
-      APPDATA: process.env.APPDATA ?? "",
-      LOCALAPPDATA: localAppData,
+      APPDATA: profile.appData,
+      LOCALAPPDATA: profile.localAppData,
       TEMP: process.env.TEMP ?? "",
       TMP: process.env.TMP ?? "",
     },
@@ -88,6 +123,8 @@ test("the package holds its runtime, compiled app, thumbnail tools and notices, 
   await extract(path.resolve("dist/VideoBrowser-win32-x64.zip"), { dir: root });
   expect(await readdir(root)).toEqual(["VideoBrowser-win32-x64"]);
   const packageRoot = path.join(root, "VideoBrowser-win32-x64");
+  // The data folder is made on first run; the package ships no user data.
+  expect(await readdir(packageRoot)).not.toContain("data");
   const files = (await tree(packageRoot)).map(({ file }) => file);
   for (const required of [
     "VideoBrowser.exe",
@@ -117,7 +154,8 @@ test("the package holds its runtime, compiled app, thumbnail tools and notices, 
     "Windows 11 x64",
     "Refresh",
     "Clear cache",
-    "%LOCALAPPDATA%\\video-browser",
+    "`data` folder",
+    "read-only",
     ".h264",
   ])
     expect(readme).toContain(topic);
@@ -164,18 +202,27 @@ test("extracted zip uses its bundled runtime and tools for thumbnails and Window
   }
 });
 
-test("the extracted package browses, refreshes, clears its cache and restores preferences offline, keeping its storage apart from the package and source videos", async () => {
-  test.setTimeout(240_000);
+test("the extracted package browses, refreshes, clears its cache and restores preferences offline, keeping all its data in its own folder and leaving the source videos alone", async () => {
+  test.setTimeout(300_000);
   const root = await mkdtemp(path.resolve(".verify/package-workflow-"));
   await extract(path.resolve("dist/VideoBrowser-win32-x64.zip"), { dir: root });
   const packageRoot = path.join(root, "VideoBrowser-win32-x64");
-  const localAppData = path.join(root, "local app data");
-  const state = path.join(localAppData, "video-browser");
-  const thumbnails = path.join(state, "thumbnails");
-  const preferences = path.join(state, "preferences.json");
+  const profile: Profile = {
+    localAppData: path.join(root, "local app data"),
+    appData: path.join(root, "roaming app data"),
+  };
+  const elsewhere = path.join(root, "another starting folder");
+  const data = path.join(packageRoot, "data");
+  const thumbnails = path.join(data, "thumbnails");
+  const preferences = path.join(data, "preferences.json");
   const folder = path.join(root, "source videos");
-  await mkdir(localAppData);
-  await mkdir(folder);
+  for (const created of [
+    profile.localAppData,
+    profile.appData,
+    elsewhere,
+    folder,
+  ])
+    await mkdir(created);
   const log = path.join(root, "launch.json");
   const player = createPlayer(log);
   type Source = { filename: string; source: string };
@@ -201,7 +248,7 @@ test("the extracted package browses, refreshes, clears its cache and restores pr
         file.endsWith(".png"),
       );
 
-    let app = await launchPackage(packageRoot, localAppData);
+    let app = await launchPackage(packageRoot, profile, packageRoot);
     try {
       expect(await app.evaluate(({ app }) => app.isPackaged)).toBe(true);
       await callMain(app, "addFixtureExtension", [player.extension]);
@@ -274,10 +321,11 @@ test("the extracted package browses, refreshes, clears its cache and restores pr
       await app.close();
     }
 
-    // A later launch restores the folder, size and sort order and reuses the
-    // stored thumbnails without extracting them again.
+    // A later launch from another starting folder restores the folder, size
+    // and sort order and reuses the stored thumbnails without extracting them
+    // again.
     const stored = await storedStills();
-    app = await launchPackage(packageRoot, localAppData);
+    app = await launchPackage(packageRoot, profile, elsewhere);
     try {
       await callMain(app, "addFixtureExtension", [player.extension]);
       const page = await app.firstWindow();
@@ -296,13 +344,42 @@ test("the extracted package browses, refreshes, clears its cache and restores pr
     // Offline: the window loaded only its own files and stored thumbnails.
     expect(requests.length).toBeGreaterThan(0);
     for (const url of requests) expect(url).toMatch(/^(file|thumbnail|data):/);
-    // Nothing was written beside the application or the source videos, and
-    // Refresh, Clear cache and the restart left the sources' bytes and times alone.
-    expect(await tree(packageRoot)).toEqual(packaged);
-    expect(await snapshot(folder)).toEqual(sources);
-    expect(await readdir(state)).toEqual(
-      expect.arrayContaining(["preferences.json", "thumbnails"]),
+    // Everything was written to the package's data folder: nothing else in
+    // the package changed, the per-user folders stay empty, and Refresh,
+    // Clear cache and the restart left the sources' bytes and times alone.
+    const dataPrefix = "data" + path.sep;
+    expect(
+      (await tree(packageRoot)).filter(
+        ({ file }) => !file.startsWith(dataPrefix),
+      ),
+    ).toEqual(packaged);
+    expect(await readdir(data)).toEqual(
+      expect.arrayContaining(["preferences.json", "thumbnails", "session"]),
     );
+    await expectProfileUntouched(profile);
+    expect(await snapshot(folder)).toEqual(sources);
+
+    // A copy of the whole folder elsewhere keeps the preferences and stored
+    // thumbnails.
+    const copy = path.join(root, "moved", "VideoBrowser-win32-x64");
+    await cp(packageRoot, copy, { recursive: true });
+    const copied = path.join(copy, "data", "thumbnails");
+    app = await launchPackage(copy, profile, elsewhere);
+    try {
+      await callMain(app, "addFixtureExtension", [player.extension]);
+      const page = await app.firstWindow();
+      await expect(page.getByLabel("Folder path")).toHaveValue(folder);
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+      await expect(page.getByLabel("Thumbnail size")).toHaveValue("360");
+      await expect(page.getByLabel("Order")).toHaveValue("descending");
+      await expectThumbnails(page, [first.filename, added.filename]);
+      expect(
+        (await tree(copied)).filter(({ file }) => file.endsWith(".png")),
+      ).toEqual(stored);
+    } finally {
+      await app.close();
+    }
+    await expectProfileUntouched(profile);
   } finally {
     player.remove();
   }

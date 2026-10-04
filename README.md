@@ -48,7 +48,7 @@ The distributable is an unzip-and-run folder, also zipped. There is no installer
    npm.cmd run test:package
    ```
 
-   This extracts the zip into `.verify` and drives its own `VideoBrowser.exe` through the complete workflow, using only Windows' own `PATH` and a fresh `%LOCALAPPDATA%`. It needs an interactive desktop. `npm.cmd run verify` runs packaging and this test as its last stage, after every other check. Use it for a build you intend to hand over.
+   This extracts the zip into `.verify` and drives its own `VideoBrowser.exe` through the complete workflow, using only Windows' own `PATH` and fresh, empty `%LOCALAPPDATA%` and `%APPDATA%` folders. The app must save nothing in them; only the empty folder Windows itself creates when it opens a video in the default player is allowed. It needs an interactive desktop. `npm.cmd run verify` runs packaging and this test as its last stage, after every other check. Use it for a build you intend to hand over.
 
 The package contains:
 
@@ -67,7 +67,9 @@ The package contains:
 2. Extract the whole archive to a local folder.
 3. Run `VideoBrowser-win32-x64\VideoBrowser.exe`.
 
-Preferences and stored thumbnails go to `%LOCALAPPDATA%\video-browser`, never beside the application or the videos. To reset the app, delete that folder while it is closed.
+The app is portable. Preferences, stored thumbnails and Electron's own session data go to a `data` folder beside `VideoBrowser.exe`, created on first run, and nowhere else. Copying the application folder keeps them, and deleting it removes them. To reset the app, delete `data` while the app is closed. If the application folder is read-only, the app still browses, keeps preferences and thumbnails in memory only, and says so. Earlier versions used `%LOCALAPPDATA%\video-browser`; that data is not imported, and the old folder can be deleted.
+
+In development, `npm.cmd start` keeps its data in the checkout's git-ignored `.state` folder. Tests set `VIDEO_BROWSER_STATE` to a disposable folder instead. Implemented in [`src/storage.ts`](src/storage.ts).
 
 The bundled FFmpeg is a GPLv3 build. The package is for private use. Before distributing it any further, read [dependencies](docs/dependencies.md).
 
@@ -237,14 +239,14 @@ Implemented in [`src/thumbnail.ts`](src/thumbnail.ts):
 
   Re-sorting moves the existing entries without re-extracting them.
 
-- **Preferences:** the last selected folder that could be listed, the thumbnail size and the sort order are saved to `%LOCALAPPDATA%\video-browser\preferences.json`. A missing or damaged file, or an invalid value, falls back to the initial choice for that value. Pending changes are saved before the app quits.
+- **Preferences:** the last selected folder that could be listed, the thumbnail size and the sort order are saved to `preferences.json` in the data folder. A missing or damaged file, or an invalid value, falls back to the initial choice for that value. Pending changes are saved before the app quits.
 - **Startup:** a fresh profile starts at 320 pixels, sorted by filename ascending, and asks for a folder. Later launches restore the size and sort order and reopen the saved folder. If that folder is unavailable, the status explains why and focus moves to **Choose folder…**.
 
 ### Stored thumbnails, Refresh and Clear cache
 
 Implemented in [`src/cache.ts`](src/cache.ts) and [`src/reconcile.ts`](src/reconcile.ts):
 
-- **Storage:** each generated still, with its duration and any dark-frame note, is stored in `%LOCALAPPDATA%\video-browser\thumbnails`. Revisiting a folder, also after restarting, shows stored thumbnails without extracting unchanged source videos again. Failures are not stored, so they are tried again on the next visit.
+- **Storage:** each generated still, with its duration and any dark-frame note, is stored in `thumbnails` in the data folder. Revisiting a folder, also after restarting, shows stored thumbnails without extracting unchanged source videos again. Failures are not stored, so they are tried again on the next visit.
 - **Source identity:** a stored thumbnail is reused only while its source keeps the same path (ignoring case), size and modification time. A record also names the generation recipe and the cache format; a thumbnail made another way, a damaged record or a missing still is never reused.
 
   Each file is written to a temporary file and renamed into place, with the record written last ([`src/replace.ts`](src/replace.ts)). If another program, such as a virus scanner, briefly holds the target open, the rename is retried for about three seconds.

@@ -1,5 +1,5 @@
-// Remembers browsing choices between sessions in a per-user JSON file, kept
-// apart from the application folder and the selected folders.
+// Remembers browsing choices between sessions in a JSON file in the data
+// folder (see storage.ts), kept apart from the selected folders.
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Preferences, SortOrder } from "./contract";

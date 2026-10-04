@@ -450,6 +450,13 @@ window.browser.onThumbnail((result) => {
   present(result.id);
 });
 
+// Stays shown for the session, apart from the status of each action.
+void window.browser.storageProblem().then((problem) => {
+  const notice = element<HTMLParagraphElement>("storage-problem");
+  notice.textContent = problem;
+  notice.hidden = !problem;
+});
+
 // Restores the last session's size and sort order, then its folder.
 void window.browser.preferences().then((saved) => {
   if (!chosen.has(size)) {

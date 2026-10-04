@@ -13,7 +13,14 @@ Extract the entire zip to a local folder, then double-click `VideoBrowser.exe`. 
 
 ## Where data is kept
 
-Preferences (the last folder, the thumbnail size and the sort order) and stored thumbnails are kept in `%LOCALAPPDATA%\video-browser`. Nothing is written beside the application or your videos, and the videos themselves are only read. Stored thumbnails are limited to 1 GB in total; the least recently shown are removed first. To start over, close the app and delete that folder.
+The app is portable: everything it saves is kept in the `data` folder beside `VideoBrowser.exe`, which it creates on first run. That folder holds your preferences (the last folder, the thumbnail size and the sort order), the stored thumbnails and the app's own working files. Nothing is written to `%LOCALAPPDATA%`, `%APPDATA%` or anywhere else outside the application folder, and your videos are only read. Stored thumbnails are limited to 1 GB in total; the least recently shown are removed first.
+
+- **Moving or copying:** copy the whole `VideoBrowser-win32-x64` folder, and your preferences and stored thumbnails come with it.
+- **Starting over:** close the app and delete the `data` folder.
+- **Removing the app:** close it and delete the application folder. Nothing is left behind.
+- **A folder that cannot be changed:** if the application folder is read-only, for example under `C:\Program Files`, the app still browses and makes thumbnails, but shows a message that preferences and stored thumbnails cannot be saved. Thumbnails are then made again each time. Extract the app to a folder you can change, such as Documents, to keep them.
+
+Earlier versions kept their data in `%LOCALAPPDATA%\video-browser`. This version does not read it, so it starts with the initial preferences. You can delete that old folder.
 
 A stored thumbnail is reused while its video keeps the same path, size and modification time. If a video is replaced by different content with the same path, size and modification time, its old thumbnail remains until you select **Clear cache**.
 
